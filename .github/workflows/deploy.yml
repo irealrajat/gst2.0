@@ -1,51 +1,103 @@
-name: Deploy BizGST Pro to GitHub Pages
+name: Build BizGST Pro — Windows EXE
 
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+    tags:
+      - 'v*'           # Also trigger on version tags like v1.0.0
+  workflow_dispatch:   # Manual trigger from GitHub UI
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest   # ← Real Windows machine on GitHub's servers
+
     steps:
-      - name: Checkout
+      # ── 1. Checkout code ──────────────────────────────────────────────────
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── OTA: Generate version.json ──────────────────────────────────────────
-      # App polls this file every 60s to detect new deployments automatically
-      - name: Generate version.json
-        run: |
-          echo '{
-            "version": "${{ github.sha }}",
-            "builtAt": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-            "branch": "${{ github.ref_name }}",
-            "pushedBy": "${{ github.actor }}",
-            "commitMsg": "${{ github.event.head_commit.message }}"
-          }' > version.json
-          echo "OTA version.json generated:"
-          cat version.json
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      # ── 2. Setup Node.js ──────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
         with:
-          path: '.'
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # ── 3. Setup Python (for icon generation) ────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── 4. Generate App Icon ──────────────────────────────────────────────
+      - name: Generate App Icon
+        run: python generate_icon.py
+
+      # ── 5. Install dependencies ───────────────────────────────────────────
+      - name: Install Node Dependencies
+        run: npm install
+
+      # ── 6. Get version from package.json ─────────────────────────────────
+      - name: Get App Version
+        id: version
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "Building version: $version"
+
+      # ── 7. Build Windows EXE (Installer + Portable) ──────────────────────
+      - name: Build Windows EXE
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 8. List built files ───────────────────────────────────────────────
+      - name: Show Built Files
+        run: |
+          echo "=== Built files in dist/ ==="
+          Get-ChildItem dist/ -Recurse -Filter "*.exe" | Format-Table Name, Length
+
+      # ── 9. Upload to GitHub Release ───────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}-build-${{ github.run_number }}
+          name: "BizGST Pro v${{ steps.version.outputs.VERSION }} (Build #${{ github.run_number }})"
+          body: |
+            ## 🚀 BizGST Pro — Windows Release
+
+            ### 📥 Download Options:
+            | File | Description |
+            |------|-------------|
+            | `BizGST-Pro-Setup-*.exe` | **Recommended** — Full installer with Start Menu shortcut |
+            | `BizGST-Pro-Portable-*.exe` | **Portable** — No install needed, run directly |
+
+            ### ✅ What's Included:
+            - Sales Invoice (CGST + SGST / IGST auto detect)
+            - Purchase Entry with Stock Management
+            - GST Summary with Date Filters
+            - Customer & Supplier Ledger
+            - Inventory with Low Stock Alerts
+            - All data saved locally on your PC
+
+            ### 📋 Build Info:
+            - Commit: `${{ github.sha }}`
+            - Branch: `${{ github.ref_name }}`
+            - Built by: `${{ github.actor }}`
+            - Date: ${{ github.event.head_commit.timestamp }}
+
+          files: |
+            dist/*.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 10. Also upload as artifact (backup) ──────────────────────────────
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BizGST-Pro-Windows-v${{ steps.version.outputs.VERSION }}
+          path: dist/*.exe
+          retention-days: 30
