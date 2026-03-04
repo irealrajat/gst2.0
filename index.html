@@ -9,6 +9,31 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    /* ── PASSWORD GATE ── */
+    #auth-gate{position:fixed;inset:0;z-index:999999;background:linear-gradient(135deg,#0F172A 0%,#1E3A5F 50%,#0F172A 100%);display:flex;align-items:center;justify-content:center;font-family:'Plus Jakarta Sans',sans-serif}
+    .auth-box{width:100%;max-width:400px;padding:40px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:20px;backdrop-filter:blur(20px);box-shadow:0 32px 80px rgba(0,0,0,.6);animation:authFadeIn .5s cubic-bezier(.22,1,.36,1)}
+    @keyframes authFadeIn{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+    .auth-logo{text-align:center;margin-bottom:28px}
+    .auth-logo h1{font-size:28px;font-weight:800;color:#fff;letter-spacing:-1px}
+    .auth-logo h1 span{color:#60A5FA}
+    .auth-logo p{font-size:13px;color:#94A3B8;margin-top:5px}
+    .auth-lock{font-size:42px;margin-bottom:12px}
+    .auth-label{display:block;font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+    .auth-input{width:100%;padding:13px 16px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;font-size:15px;font-family:inherit;outline:none;transition:all .2s;letter-spacing:2px}
+    .auth-input:focus{border-color:#3B82F6;background:rgba(59,130,246,.1)}
+    .auth-input::placeholder{letter-spacing:0;color:#475569}
+    .auth-btn{width:100%;margin-top:16px;padding:13px;background:linear-gradient(135deg,#2563EB,#7C3AED);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;transition:all .2s;letter-spacing:.3px}
+    .auth-btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(37,99,235,.4)}
+    .auth-btn:active{transform:translateY(0)}
+    .auth-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+    .auth-error{margin-top:12px;padding:10px 14px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:8px;color:#FCA5A5;font-size:13px;text-align:center;animation:shake .4s ease}
+    @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+    .auth-attempts{text-align:center;margin-top:12px;font-size:12px;color:#64748B}
+    .auth-lockout{text-align:center;color:#F87171;font-size:13px;margin-top:12px}
+    .auth-footer{text-align:center;margin-top:24px;font-size:11px;color:#334155}
+    #auth-gate.hidden{display:none}
+  </style>
+  <style>
     *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
     :root{
       --bg:#EEF2F7;--sidebar:#111827;--sidebar-text:#9CA3AF;--sidebar-hover:#1F2937;
@@ -202,93 +227,221 @@
   </style>
 </head>
 <body>
+<!-- ── PASSWORD GATE HTML ── -->
+<div id="auth-gate">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-lock">🔐</div>
+      <h1>Biz<span>GST</span> Pro</h1>
+      <p>Authorized Access Only</p>
+    </div>
+    <label class="auth-label" for="pwd-input">Enter Password</label>
+    <input type="password" id="pwd-input" class="auth-input" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')checkAuth()"/>
+    <button class="auth-btn" id="auth-btn" onclick="checkAuth()">🔓 Unlock Software</button>
+    <div id="auth-error" style="display:none" class="auth-error">❌ Wrong password. Try again.</div>
+    <div id="auth-attempts" class="auth-attempts"></div>
+    <div class="auth-footer">🔒 BizGST Pro · Secured Access · Only authorized users can view this software</div>
+  </div>
+</div>
+
+<!-- ── AUTH SCRIPT (runs before React) ── -->
+<script>
+// ── CONFIGURATION ──────────────────────────────────────────────────────────────
+// Password is stored as SHA-256 hash — NEVER store plaintext password in code!
+// Default password: BizGST@2024  (change this hash after updating your password)
+// To generate a new hash: open browser console → type:
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('YourNewPassword'))
+//     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
+
+const PASSWORD_HASH = '67ca6a0e11369b348069dccd28adb2b897e1b10f3b94ccb95589b61ad37e0f04'; 
+// ⚠️  Above is placeholder. Replace with your actual hash (see README.md for instructions)
+// Real default: BizGST@2024 → run the command above to generate actual hash
+
+const SESSION_KEY   = 'bizgst_auth_v1';   // sessionStorage key
+const MAX_ATTEMPTS  = 5;                  // lockout after 5 wrong attempts
+const LOCKOUT_MIN   = 15;                 // lockout duration in minutes
+
+let attempts = parseInt(sessionStorage.getItem('bizgst_attempts') || '0');
+let lockoutUntil = parseInt(sessionStorage.getItem('bizgst_lockout') || '0');
+
+// ── Already authenticated this session? Skip gate immediately ──────────────────
+if (sessionStorage.getItem(SESSION_KEY) === 'true') {
+  document.getElementById('auth-gate').classList.add('hidden');
+}
+
+// ── Hash helper using Web Crypto API ──────────────────────────────────────────
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+async function checkAuth() {
+  const now = Date.now();
+
+  // Check lockout
+  if (lockoutUntil > now) {
+    const mins = Math.ceil((lockoutUntil - now) / 60000);
+    document.getElementById('auth-error').style.display = 'block';
+    document.getElementById('auth-error').innerHTML = `🔒 Too many attempts! Try again in <strong>${mins} minute${mins>1?'s':''}</strong>.`;
+    document.getElementById('auth-btn').disabled = true;
+    return;
+  }
+
+  const input = document.getElementById('pwd-input').value;
+  if (!input) return;
+
+  document.getElementById('auth-btn').disabled = true;
+  document.getElementById('auth-btn').textContent = 'Verifying...';
+
+  const hash = await sha256(input);
+
+  if (hash === PASSWORD_HASH) {
+    // ✅ Correct password
+    sessionStorage.setItem(SESSION_KEY, 'true');
+    sessionStorage.removeItem('bizgst_attempts');
+    sessionStorage.removeItem('bizgst_lockout');
+    const gate = document.getElementById('auth-gate');
+    gate.style.animation = 'authFadeIn .3s ease reverse';
+    setTimeout(() => gate.classList.add('hidden'), 280);
+  } else {
+    // ❌ Wrong password
+    attempts++;
+    sessionStorage.setItem('bizgst_attempts', attempts);
+    document.getElementById('pwd-input').value = '';
+    document.getElementById('auth-btn').disabled = false;
+    document.getElementById('auth-btn').textContent = '🔓 Unlock Software';
+
+    const remaining = MAX_ATTEMPTS - attempts;
+    document.getElementById('auth-error').style.display = 'block';
+
+    if (attempts >= MAX_ATTEMPTS) {
+      // Lockout!
+      const until = now + LOCKOUT_MIN * 60 * 1000;
+      sessionStorage.setItem('bizgst_lockout', until);
+      lockoutUntil = until;
+      document.getElementById('auth-btn').disabled = true;
+      document.getElementById('auth-error').innerHTML = `🔒 <strong>${MAX_ATTEMPTS} wrong attempts!</strong> Locked for ${LOCKOUT_MIN} minutes.`;
+      document.getElementById('auth-attempts').textContent = '';
+    } else {
+      document.getElementById('auth-error').textContent = `❌ Wrong password!`;
+      document.getElementById('auth-attempts').textContent = `⚠️ ${remaining} attempt${remaining>1?'s':''} remaining before lockout.`;
+    }
+  }
+}
+
+// Restore lockout state on page load
+window.addEventListener('DOMContentLoaded', () => {
+  const now = Date.now();
+  if (lockoutUntil > now) {
+    const mins = Math.ceil((lockoutUntil - now) / 60000);
+    document.getElementById('auth-error').style.display = 'block';
+    document.getElementById('auth-error').innerHTML = `🔒 Locked. Try again in <strong>${mins} minute${mins>1?'s':''}</strong>.`;
+    document.getElementById('auth-btn').disabled = true;
+  }
+  if (attempts > 0 && lockoutUntil <= now) {
+    document.getElementById('auth-attempts').textContent = `⚠️ ${MAX_ATTEMPTS - attempts} attempt(s) remaining.`;
+  }
+});
+</script>
+
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useMemo, useEffect, useRef } = React;
+const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-// 250025002500 OTA UPDATE CHECKER 25002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500
-const CHECK_MS = 60 * 1000;
+// ─── LOCAL STORAGE HELPERS ──────────────────────────────────────────────────
+const LS = {
+  get:(k,def)=>{ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch{ return def; } },
+  set:(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
+};
+
+// ─── OTA UPDATE CHECKER ─────────────────────────────────────────────────────
+const CHECK_MS = 60*1000;
 const OTABanner = () => {
-  const [update, setUpdate] = useState(null);
-  const [dismissed, setDismissed] = useState(false);
-  const current = useRef(null);
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const res = await fetch(`version.json?t=${Date.now()}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!current.current) { current.current = data.version; }
-        else if (data.version !== current.current) { setUpdate(data); setDismissed(false); }
-      } catch {}
+  const [update,setUpdate]=useState(null);
+  const [dismissed,setDismissed]=useState(false);
+  const current=useRef(null);
+  useEffect(()=>{
+    const check=async()=>{
+      try{
+        const res=await fetch(`version.json?t=${Date.now()}`);
+        if(!res.ok)return;
+        const data=await res.json();
+        if(!current.current){current.current=data.version;}
+        else if(data.version!==current.current){setUpdate(data);setDismissed(false);}
+      }catch{}
     };
     check();
-    const t = setInterval(check, CHECK_MS);
-    return () => clearInterval(t);
-  }, []);
-  if (!update || dismissed) return null;
-  const bt = update.builtAt ? new Date(update.builtAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
-  return (
+    const t=setInterval(check,CHECK_MS);
+    return()=>clearInterval(t);
+  },[]);
+  if(!update||dismissed)return null;
+  const bt=update.builtAt?new Date(update.builtAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  return(
     <div className="ota-banner">
-      <div className="ota-left"><div className="ota-dot"/><span>🚀 <strong>New Update Available!</strong> — Push deploy ho gaya. Reload karo latest version ke liye.</span>{bt && <span className="ota-ver">Built: {bt}</span>}<span className="ota-ver">v{update.version?.slice(0,7)}</span></div>
+      <div className="ota-left"><div className="ota-dot"/><span>🚀 <strong>New Update Available!</strong> — Push deploy ho gaya. Reload karo latest version ke liye.</span>{bt&&<span className="ota-ver">Built: {bt}</span>}<span className="ota-ver">v{update.version?.slice(0,7)}</span></div>
       <div className="ota-actions"><button className="ota-update-btn" onClick={()=>window.location.reload(true)}>⬇ Update Now</button><button className="ota-skip-btn" onClick={()=>setDismissed(true)}>Later</button></div>
     </div>
   );
 };
 
-// ─── COMPANY INFO ──────────────────────────────────────────────────────────────
-const CO = {
-  name:'Sharma Traders',gstin:'27AABCS1429B1ZB',
-  address:'42, Shivaji Nagar, Pune - 411005, Maharashtra',
-  state:'Maharashtra',stateCode:'27',
-  phone:'+91 98765 43210',email:'info@sharmatraders.com',
-  pan:'AABCS1429B',bank:'HDFC Bank | A/c 50100234567890 | IFSC: HDFC0001234'
-};
-
-const GST_RATES=[0,5,12,18,28];
-
-// ─── INITIAL DATA ──────────────────────────────────────────────────────────────
-const IC=[
-  {id:'C001',name:'Ravi Electronics',gstin:'27AAACR1234B1Z1',address:'FC Road, Pune - 411004',state:'Maharashtra',stateCode:'27',phone:'98765 11111'},
-  {id:'C002',name:'Delhi Digital Store',gstin:'07AAADM5678C1Z2',address:'Lajpat Nagar, New Delhi - 110024',state:'Delhi',stateCode:'07',phone:'98765 22222'},
-  {id:'C003',name:'Mumbai Mart',gstin:'27AAABM9012D1Z3',address:'Dadar West, Mumbai - 400028',state:'Maharashtra',stateCode:'27',phone:'98765 33333'},
-  {id:'C004',name:'Chennai Tech Hub',gstin:'33AAACC3456E1Z4',address:'T Nagar, Chennai - 600017',state:'Tamil Nadu',stateCode:'33',phone:'98765 44444'},
+// ─── DEFAULT DATA ───────────────────────────────────────────────────────────
+const DEF_CO={name:'Sharma Traders',gstin:'27AABCS1429B1ZB',address:'42, Shivaji Nagar, Pune - 411005, Maharashtra',state:'Maharashtra',stateCode:'27',phone:'+91 98765 43210',email:'info@sharmatraders.com',pan:'AABCS1429B',bank:'HDFC Bank | A/c 50100234567890 | IFSC: HDFC0001234'};
+const DEF_CUSTOMERS=[
+  {id:'C001',name:'Ravi Electronics',gstin:'27AAACR1234B1Z1',address:'FC Road, Pune - 411004',state:'Maharashtra',stateCode:'27',phone:'98765 11111',email:''},
+  {id:'C002',name:'Delhi Digital Store',gstin:'07AAADM5678C1Z2',address:'Lajpat Nagar, New Delhi - 110024',state:'Delhi',stateCode:'07',phone:'98765 22222',email:''},
+  {id:'C003',name:'Mumbai Mart',gstin:'27AAABM9012D1Z3',address:'Dadar West, Mumbai - 400028',state:'Maharashtra',stateCode:'27',phone:'98765 33333',email:''},
+  {id:'C004',name:'Chennai Tech Hub',gstin:'33AAACC3456E1Z4',address:'T Nagar, Chennai - 600017',state:'Tamil Nadu',stateCode:'33',phone:'98765 44444',email:''},
 ];
-const IS=[
-  {id:'S001',name:'Tech Wholesale Delhi',gstin:'07AAATW7890F1Z5',address:'Chandni Chowk, Delhi - 110006',state:'Delhi',stateCode:'07',phone:'98765 55555'},
-  {id:'S002',name:'Electronics Hub Mumbai',gstin:'27AAAEH2345G1Z6',address:'Dharavi, Mumbai - 400017',state:'Maharashtra',stateCode:'27',phone:'98765 66666'},
+const DEF_SUPPLIERS=[
+  {id:'S001',name:'Tech Wholesale Delhi',gstin:'07AAATW7890F1Z5',address:'Chandni Chowk, Delhi - 110006',state:'Delhi',stateCode:'07',phone:'98765 55555',email:''},
+  {id:'S002',name:'Electronics Hub Mumbai',gstin:'27AAAEH2345G1Z6',address:'Dharavi, Mumbai - 400017',state:'Maharashtra',stateCode:'27',phone:'98765 66666',email:''},
 ];
-const IP=[
+const DEF_PRODUCTS=[
   {id:'P001',name:'Samsung Mobile A54',hsn:'85171210',unit:'PCS',salePrice:28999,purchasePrice:25000,gstRate:18,stock:15,minStock:5},
   {id:'P002',name:'HP Laptop 15s',hsn:'84713020',unit:'PCS',salePrice:52999,purchasePrice:46000,gstRate:18,stock:8,minStock:3},
   {id:'P003',name:'SanDisk Pen Drive 64GB',hsn:'85235100',unit:'PCS',salePrice:599,purchasePrice:380,gstRate:18,stock:50,minStock:10},
   {id:'P004',name:'Classmate Notebook (Pack 6)',hsn:'48201000',unit:'PACK',salePrice:120,purchasePrice:80,gstRate:12,stock:3,minStock:20},
   {id:'P005',name:'Logitech Mouse M235',hsn:'84716060',unit:'PCS',salePrice:799,purchasePrice:550,gstRate:18,stock:25,minStock:5},
 ];
-const II=[
+const DEF_INVOICES=[
   {id:'INV001',invoiceNo:'INV-2024-001',date:'2024-02-10',customerId:'C001',customerName:'Ravi Electronics',customerGstin:'27AAACR1234B1Z1',customerAddress:'FC Road, Pune - 411004',customerState:'Maharashtra',customerStateCode:'27',taxType:'cgst_sgst',items:[{productId:'P001',name:'Samsung Mobile A54',hsn:'85171210',qty:2,rate:28999,gstRate:18,taxable:57998,cgst:5219.82,sgst:5219.82,igst:0,total:68437.64},{productId:'P003',name:'SanDisk Pen Drive 64GB',hsn:'85235100',qty:5,rate:599,gstRate:18,taxable:2995,cgst:269.55,sgst:269.55,igst:0,total:3534.1}],subtotal:60993,taxable:60993,cgst:5489.37,sgst:5489.37,igst:0,totalTax:10978.74,roundOff:0.26,grandTotal:71972,paid:true},
   {id:'INV002',invoiceNo:'INV-2024-002',date:'2024-02-14',customerId:'C002',customerName:'Delhi Digital Store',customerGstin:'07AAADM5678C1Z2',customerAddress:'Lajpat Nagar, New Delhi - 110024',customerState:'Delhi',customerStateCode:'07',taxType:'igst',items:[{productId:'P002',name:'HP Laptop 15s',hsn:'84713020',qty:1,rate:52999,gstRate:18,taxable:52999,cgst:0,sgst:0,igst:9539.82,total:62538.82}],subtotal:52999,taxable:52999,cgst:0,sgst:0,igst:9539.82,totalTax:9539.82,roundOff:0.18,grandTotal:62539,paid:false},
   {id:'INV003',invoiceNo:'INV-2024-003',date:'2024-03-02',customerId:'C003',customerName:'Mumbai Mart',customerGstin:'27AAABM9012D1Z3',customerAddress:'Dadar West, Mumbai - 400028',customerState:'Maharashtra',customerStateCode:'27',taxType:'cgst_sgst',items:[{productId:'P005',name:'Logitech Mouse M235',hsn:'84716060',qty:10,rate:799,gstRate:18,taxable:7990,cgst:719.1,sgst:719.1,igst:0,total:9428.2},{productId:'P004',name:'Classmate Notebook (Pack 6)',hsn:'48201000',qty:5,rate:120,gstRate:12,taxable:600,cgst:36,sgst:36,igst:0,total:672}],subtotal:8590,taxable:8590,cgst:755.1,sgst:755.1,igst:0,totalTax:1510.2,roundOff:-0.2,grandTotal:10100,paid:true},
 ];
-const IPU=[
+const DEF_PURCHASES=[
   {id:'PUR001',purchaseNo:'PUR-2024-001',date:'2024-01-25',supplierId:'S001',supplierName:'Tech Wholesale Delhi',supplierGstin:'07AAATW7890F1Z5',taxType:'igst',items:[{productId:'P001',name:'Samsung Mobile A54',hsn:'85171210',qty:10,rate:25000,gstRate:18,taxable:250000,cgst:0,sgst:0,igst:45000,total:295000}],subtotal:250000,taxable:250000,cgst:0,sgst:0,igst:45000,totalTax:45000,grandTotal:295000,paid:true},
 ];
 
-// ─── UTILS ─────────────────────────────────────────────────────────────────────
+const GST_RATES=[0,5,12,18,28];
+const STATES=[
+  {name:'Andhra Pradesh',code:'37'},{name:'Arunachal Pradesh',code:'12'},{name:'Assam',code:'18'},
+  {name:'Bihar',code:'10'},{name:'Chhattisgarh',code:'22'},{name:'Delhi',code:'07'},
+  {name:'Goa',code:'30'},{name:'Gujarat',code:'24'},{name:'Haryana',code:'06'},
+  {name:'Himachal Pradesh',code:'02'},{name:'Jharkhand',code:'20'},{name:'Karnataka',code:'29'},
+  {name:'Kerala',code:'32'},{name:'Madhya Pradesh',code:'23'},{name:'Maharashtra',code:'27'},
+  {name:'Manipur',code:'14'},{name:'Meghalaya',code:'17'},{name:'Mizoram',code:'15'},
+  {name:'Nagaland',code:'13'},{name:'Odisha',code:'21'},{name:'Punjab',code:'03'},
+  {name:'Rajasthan',code:'08'},{name:'Sikkim',code:'11'},{name:'Tamil Nadu',code:'33'},
+  {name:'Telangana',code:'36'},{name:'Tripura',code:'16'},{name:'Uttar Pradesh',code:'09'},
+  {name:'Uttarakhand',code:'05'},{name:'West Bengal',code:'19'},
+];
+
+// ─── UTILS ──────────────────────────────────────────────────────────────────
 const fc=n=>'₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fd=d=>{if(!d)return'';return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})};
 const tod=()=>new Date().toISOString().split('T')[0];
 const inRange=(d,s,e)=>d>=s&&d<=e;
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
 const getRange=(filter,cs,ce)=>{
   const now=new Date();const yr=now.getFullYear();const mo=now.getMonth();
   switch(filter){
     case'today':{const t=tod();return{start:t,end:t}}
     case'week':{const d=now.getDay();const s=new Date(now);s.setDate(now.getDate()-d);const e=new Date(s);e.setDate(s.getDate()+6);return{start:s.toISOString().split('T')[0],end:e.toISOString().split('T')[0]}}
-    case'month':{return{start:new Date(yr,mo,1).toISOString().split('T')[0],end:new Date(yr,mo+1,0).toISOString().split('T')[0]}}
-    case'lastmonth':{return{start:new Date(yr,mo-1,1).toISOString().split('T')[0],end:new Date(yr,mo,0).toISOString().split('T')[0]}}
+    case'month':return{start:new Date(yr,mo,1).toISOString().split('T')[0],end:new Date(yr,mo+1,0).toISOString().split('T')[0]}
+    case'lastmonth':return{start:new Date(yr,mo-1,1).toISOString().split('T')[0],end:new Date(yr,mo,0).toISOString().split('T')[0]}
     case'quarter':{const q=Math.floor(mo/3);return{start:new Date(yr,q*3,1).toISOString().split('T')[0],end:new Date(yr,q*3+3,0).toISOString().split('T')[0]}}
-    case'year':{return{start:`${yr}-04-01`,end:`${yr+1}-03-31`}}
+    case'year':return{start:`${yr}-04-01`,end:`${yr+1}-03-31`}
     case'custom':return{start:cs||'2020-01-01',end:ce||'2099-12-31'}
     default:return{start:'2020-01-01',end:'2099-12-31'}
   }
@@ -309,16 +462,16 @@ const calcTotals=(items,taxType)=>{
   const igst=+calc.reduce((s,i)=>s+i.igst,0).toFixed(2);
   const totalTax=+(cgst+sgst+igst).toFixed(2);
   const gross=taxable+totalTax;
-  const paise=+(gross%1).toFixed(2); // decimal part e.g. 0.42 or 0.67
-  const grandTotal=paise>=0.50?Math.ceil(gross):Math.floor(gross); // .50–.99 → up | .00–.49 → down
+  const paise=+(gross%1).toFixed(2);
+  const grandTotal=paise>=0.50?Math.ceil(gross):Math.floor(gross);
   const roundOff=+((grandTotal-gross).toFixed(2));
   return{items:calc,taxable,cgst,sgst,igst,totalTax,roundOff,grandTotal};
 };
 
-const nextInvNo=(invoices)=>{const yr=new Date().getFullYear();const nums=invoices.filter(i=>i.invoiceNo.startsWith(`INV-${yr}`)).map(i=>parseInt(i.invoiceNo.split('-')[2])||0);return`INV-${yr}-${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`};
-const nextPurNo=(purchases)=>{const yr=new Date().getFullYear();const nums=purchases.filter(p=>p.purchaseNo.startsWith(`PUR-${yr}`)).map(p=>parseInt(p.purchaseNo.split('-')[2])||0);return`PUR-${yr}-${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`};
+const nextInvNo=invoices=>{const yr=new Date().getFullYear();const nums=invoices.filter(i=>i.invoiceNo.startsWith(`INV-${yr}`)).map(i=>parseInt(i.invoiceNo.split('-')[2])||0);return`INV-${yr}-${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`};
+const nextPurNo=purchases=>{const yr=new Date().getFullYear();const nums=purchases.filter(p=>p.purchaseNo.startsWith(`PUR-${yr}`)).map(p=>parseInt(p.purchaseNo.split('-')[2])||0);return`PUR-${yr}-${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`};
 
-// ─── MODAL ─────────────────────────────────────────────────────────────────────
+// ─── MODAL ──────────────────────────────────────────────────────────────────
 const Modal=({show,onClose,title,size,children,footer})=>{
   if(!show)return null;
   return(
@@ -332,20 +485,31 @@ const Modal=({show,onClose,title,size,children,footer})=>{
   );
 };
 
-// ─── SIDEBAR ───────────────────────────────────────────────────────────────────
-const Sidebar=({active,set})=>{
+// ─── CONFIRM DIALOG ─────────────────────────────────────────────────────────
+const Confirm=({show,msg,onYes,onNo})=>(
+  <Modal show={show} title="Confirm" size="modal-sm" onClose={onNo}
+    footer={<><button className="btn btn-outline" onClick={onNo}>Cancel</button><button className="btn btn-danger" onClick={onYes}>Yes, Delete</button></>}>
+    <p style={{fontSize:14,lineHeight:1.6}}>{msg}</p>
+  </Modal>
+);
+
+// ─── SIDEBAR ────────────────────────────────────────────────────────────────
+const Sidebar=({active,set,co})=>{
   const items=[
     {id:'dashboard',icon:'⊞',label:'Dashboard'},
     {id:'billing',icon:'🧾',label:'Sales Invoice'},
     {id:'purchase',icon:'📦',label:'Purchase Entry'},
     {id:'inventory',icon:'📊',label:'Inventory'},
     {id:'gst',icon:'🏛️',label:'GST Summary'},
-    {id:'customers',icon:'👥',label:'Customer Ledger'},
-    {id:'suppliers',icon:'🏭',label:'Supplier Ledger'},
+    {id:'customers',icon:'👥',label:'Customers'},
+    {id:'suppliers',icon:'🏭',label:'Suppliers'},
+    {id:'custledger',icon:'📒',label:'Customer Ledger'},
+    {id:'suppledger',icon:'📗',label:'Supplier Ledger'},
+    {id:'settings',icon:'⚙️',label:'Settings'},
   ];
   return(
     <div className="sidebar">
-      <div className="sb-logo"><h1>Biz<span>GST</span> Pro</h1><p>{CO.name}</p></div>
+      <div className="sb-logo"><h1>Biz<span>GST</span> Pro</h1><p style={{fontSize:10,color:'#9CA3AF',marginTop:2}}>{co.name}</p></div>
       <nav className="sb-nav">
         <div className="sb-section">Main Menu</div>
         {items.map(i=>(
@@ -353,120 +517,203 @@ const Sidebar=({active,set})=>{
             <span className="ni">{i.icon}</span>{i.label}
           </div>
         ))}
-        <div className="sb-section" style={{marginTop:16}}>Company</div>
-        <div style={{padding:'8px 12px',fontSize:11,color:'#4B5563',lineHeight:1.7}}>
-          <div style={{color:'#9CA3AF',marginBottom:2}}>GSTIN</div>
-          <div style={{color:'#E5E7EB',fontFamily:'JetBrains Mono',fontSize:10}}>{CO.gstin}</div>
-          <div style={{color:'#9CA3AF',marginBottom:2,marginTop:6}}>State</div>
-          <div style={{color:'#E5E7EB',fontSize:11}}>{CO.state} (Code: {CO.stateCode})</div>
-        </div>
       </nav>
-    </div>
-  );
-};
-
-// ─── DASHBOARD ─────────────────────────────────────────────────────────────────
-const Dashboard=({invoices,purchases,products,setModule})=>{
-  const mr=getRange('month');
-  const mInv=invoices.filter(i=>inRange(i.date,mr.start,mr.end));
-  const sales=mInv.reduce((s,i)=>s+i.grandTotal,0);
-  const tax=mInv.reduce((s,i)=>s+i.totalTax,0);
-  const pending=invoices.filter(i=>!i.paid).reduce((s,i)=>s+i.grandTotal,0);
-  const low=products.filter(p=>p.stock<=p.minStock).length;
-  const recent=[...invoices].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
-  return(
-    <div className="anim">
-      <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">This Month Sales</div><div className="stat-value" style={{color:'var(--success)'}}>{fc(sales)}</div><div className="stat-sub">{mInv.length} invoices</div></div>
-        <div className="stat-card"><div className="stat-label">Output GST (Month)</div><div className="stat-value" style={{color:'var(--primary)'}}>{fc(tax)}</div><div className="stat-sub">GST liability</div></div>
-        <div className="stat-card"><div className="stat-label">Pending Receivables</div><div className="stat-value" style={{color:'var(--warning)'}}>{fc(pending)}</div><div className="stat-sub">{invoices.filter(i=>!i.paid).length} unpaid invoices</div></div>
-        <div className="stat-card"><div className="stat-label">Low Stock Alerts</div><div className="stat-value" style={{color:low>0?'var(--danger)':'var(--success)'}}>{low}</div><div className="stat-sub">products below minimum</div></div>
-      </div>
-      {low>0&&<div className="alert alert-warn mb4">⚠️ <strong>{low} product{low>1?'s':''}</strong> below minimum stock. <span style={{cursor:'pointer',textDecoration:'underline'}} onClick={()=>setModule('inventory')}>View Inventory →</span></div>}
-      <div className="card">
-        <div className="card-header"><h3>Recent Invoices</h3><button className="btn btn-outline btn-sm" onClick={()=>setModule('billing')}>View All</button></div>
-        <div className="tbl-wrap">
-          <table>
-            <thead><tr><th>Invoice No</th><th>Date</th><th>Customer</th><th>Tax Type</th><th>GST</th><th style={{textAlign:'right'}}>Total</th><th>Status</th></tr></thead>
-            <tbody>
-              {recent.map(inv=>(
-                <tr key={inv.id}>
-                  <td className="mono bold">{inv.invoiceNo}</td>
-                  <td>{fd(inv.date)}</td>
-                  <td><div className="bold">{inv.customerName}</div><div className="sm muted">{inv.customerState}</div></td>
-                  <td><span className={`badge ${inv.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{inv.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
-                  <td className="mono">{fc(inv.totalTax)}</td>
-                  <td className="mono bold tr">{fc(inv.grandTotal)}</td>
-                  <td><span className={`badge ${inv.paid?'badge-success':'badge-warning'}`}>{inv.paid?'Paid':'Pending'}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div style={{padding:'12px 16px',borderTop:'1px solid #1F2937'}}>
+        <div style={{fontSize:10,color:'#4B5563',marginBottom:4,fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>GSTIN</div>
+        <div style={{color:'#E5E7EB',fontFamily:'JetBrains Mono',fontSize:10,wordBreak:'break-all'}}>{co.gstin}</div>
       </div>
     </div>
   );
 };
 
-// ─── BILLING MODULE ────────────────────────────────────────────────────────────
-const BillingModule=({invoices,setInvoices,customers,products,setProducts})=>{
-  const [showForm,setShowForm]=useState(false);
-  const [printInv,setPrintInv]=useState(null);
-  const [fs,setFs]=useState('all');
-  const filtered=[...invoices].filter(i=>fs==='all'||(fs==='paid'?i.paid:!i.paid)).sort((a,b)=>b.date.localeCompare(a.date));
-  const handleCreate=inv=>{
-    setInvoices(p=>[...p,inv]);
-    setProducts(p=>p.map(prod=>{const item=inv.items.find(i=>i.productId===prod.id);return item?{...prod,stock:Math.max(0,prod.stock-item.qty)}:prod}));
-    setShowForm(false);
+// ─── FORM FIELDS HELPER ─────────────────────────────────────────────────────
+const FG=({label,children})=><div className="form-group"><label className="form-label">{label}</label>{children}</div>;
+const FI=({label,...p})=><FG label={label}><input className="form-control" {...p}/></FG>;
+
+// ─── CUSTOMER / SUPPLIER FORM ────────────────────────────────────────────────
+const PartyForm=({party,type,onSave,onClose})=>{
+  const blank={id:'',name:'',gstin:'',address:'',state:'Maharashtra',stateCode:'27',phone:'',email:''};
+  const [f,setF]=useState(party||blank);
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const handleState=e=>{const st=STATES.find(x=>x.name===e.target.value);if(st)setF(p=>({...p,state:st.name,stateCode:st.code}));};
+  const save=()=>{
+    if(!f.name.trim())return alert('Name required');
+    onSave({...f,id:f.id||uid()});
   };
-  const togglePaid=id=>setInvoices(p=>p.map(i=>i.id===id?{...i,paid:!i.paid}:i));
+  return(
+    <Modal show title={`${party?'Edit':'Add'} ${type==='customer'?'Customer':'Supplier'}`} size="modal-sm" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>💾 Save</button></>}>
+      <FI label="Name *" value={f.name} onChange={e=>s('name',e.target.value)} placeholder="Business name"/>
+      <FI label="GSTIN" value={f.gstin} onChange={e=>s('gstin',e.target.value.toUpperCase())} placeholder="27AABCS1429B1ZB" className="form-control mono"/>
+      <FI label="Phone" value={f.phone} onChange={e=>s('phone',e.target.value)} placeholder="+91 98765 43210"/>
+      <FI label="Email" value={f.email} onChange={e=>s('email',e.target.value)} placeholder="email@example.com"/>
+      <FG label="State *">
+        <select className="form-control" value={f.state} onChange={handleState}>
+          {STATES.map(st=><option key={st.code} value={st.name}>{st.name} ({st.code})</option>)}
+        </select>
+      </FG>
+      <FI label="Address" value={f.address} onChange={e=>s('address',e.target.value)} placeholder="Full address"/>
+    </Modal>
+  );
+};
+
+// ─── CUSTOMERS MODULE ────────────────────────────────────────────────────────
+const CustomersModule=({customers,setCustomers,invoices})=>{
+  const [showForm,setShowForm]=useState(false);
+  const [editC,setEditC]=useState(null);
+  const [delC,setDelC]=useState(null);
+  const [search,setSearch]=useState('');
+  const filtered=customers.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||c.gstin.toLowerCase().includes(search.toLowerCase()));
+  const save=c=>{
+    setCustomers(p=>editC?p.map(x=>x.id===c.id?c:x):[...p,c]);
+    setShowForm(false);setEditC(null);
+  };
+  const del=()=>{
+    const used=invoices.some(i=>i.customerId===delC.id);
+    if(used){alert(`Cannot delete — ${delC.name} has invoices linked. Delete those invoices first.`);setDelC(null);return;}
+    setCustomers(p=>p.filter(x=>x.id!==delC.id));setDelC(null);
+  };
   return(
     <div className="anim">
       <div className="row between mb4">
-        <div className="row gap2">
-          {['all','paid','pending'].map(s=><button key={s} className={`filter-btn${fs===s?' on':''}`} onClick={()=>setFs(s)}>{s.charAt(0).toUpperCase()+s.slice(1)}</button>)}
-        </div>
-        <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ New Invoice</button>
+        <input className="form-control" style={{width:280}} placeholder="🔍 Search customers..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <button className="btn btn-primary" onClick={()=>{setEditC(null);setShowForm(true)}}>+ Add Customer</button>
       </div>
       <div className="card">
         <div className="tbl-wrap">
-          {filtered.length===0?(
-            <div className="empty"><div className="ei">🧾</div><h3>No Invoices</h3><p>Create your first sales invoice</p></div>
-          ):(
+          {filtered.length===0?<div className="empty"><div className="ei">👥</div><h3>No Customers</h3><p>Add your first customer</p></div>:(
             <table>
-              <thead><tr><th>Invoice No</th><th>Date</th><th>Customer</th><th>Tax Type</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>GST</th><th style={{textAlign:'right'}}>Total</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>
-                {filtered.map(inv=>(
-                  <tr key={inv.id}>
-                    <td className="mono bold">{inv.invoiceNo}</td>
-                    <td>{fd(inv.date)}</td>
-                    <td><div className="bold">{inv.customerName}</div><div className="sm muted">{inv.customerState}</div></td>
-                    <td><span className={`badge ${inv.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{inv.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
-                    <td className="mono tr">{fc(inv.taxable)}</td>
-                    <td className="mono tr">{fc(inv.totalTax)}</td>
-                    <td className="mono bold tr">{fc(inv.grandTotal)}</td>
-                    <td><span className={`badge ${inv.paid?'badge-success':'badge-warning'}`} style={{cursor:'pointer'}} onClick={()=>togglePaid(inv.id)}>{inv.paid?'✓ Paid':'Pending'}</span></td>
-                    <td><button className="btn btn-outline btn-sm" onClick={()=>setPrintInv(inv)}>🖨 Print</button></td>
+              <thead><tr><th>Name</th><th>GSTIN</th><th>State</th><th>Phone</th><th>Invoices</th><th>Actions</th></tr></thead>
+              <tbody>{filtered.map(c=>{
+                const inv=invoices.filter(i=>i.customerId===c.id).length;
+                return(
+                  <tr key={c.id}>
+                    <td><div className="bold">{c.name}</div><div className="sm muted">{c.address}</div></td>
+                    <td className="mono sm">{c.gstin||'—'}</td>
+                    <td>{c.state} <span className="muted sm">({c.stateCode})</span></td>
+                    <td>{c.phone||'—'}</td>
+                    <td><span className="badge badge-primary">{inv} invoice{inv!==1?'s':''}</span></td>
+                    <td><div className="row gap2">
+                      <button className="btn btn-outline btn-sm" onClick={()=>{setEditC(c);setShowForm(true)}}>✏ Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={()=>setDelC(c)}>🗑</button>
+                    </div></td>
                   </tr>
-                ))}
-              </tbody>
+                );
+              })}</tbody>
             </table>
           )}
         </div>
       </div>
-      {showForm&&<InvoiceForm customers={customers} products={products} invoices={invoices} onSave={handleCreate} onClose={()=>setShowForm(false)}/>}
-      {printInv&&<InvoicePrint invoice={printInv} onClose={()=>setPrintInv(null)}/>}
+      {showForm&&<PartyForm party={editC} type="customer" onSave={save} onClose={()=>{setShowForm(false);setEditC(null)}}/>}
+      <Confirm show={!!delC} msg={`Delete customer "${delC?.name}"? This cannot be undone.`} onYes={del} onNo={()=>setDelC(null)}/>
     </div>
   );
 };
 
-// ─── INVOICE FORM ──────────────────────────────────────────────────────────────
-const InvoiceForm=({customers,products,invoices,onSave,onClose})=>{
-  const [date,setDate]=useState(tod());
-  const [custId,setCustId]=useState('');
-  const [items,setItems]=useState([{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
+// ─── SUPPLIERS MODULE ─────────────────────────────────────────────────────────
+const SuppliersModule=({suppliers,setSuppliers,purchases})=>{
+  const [showForm,setShowForm]=useState(false);
+  const [editS,setEditS]=useState(null);
+  const [delS,setDelS]=useState(null);
+  const [search,setSearch]=useState('');
+  const filtered=suppliers.filter(s=>s.name.toLowerCase().includes(search.toLowerCase())||s.gstin.toLowerCase().includes(search.toLowerCase()));
+  const save=s=>{
+    setSuppliers(p=>editS?p.map(x=>x.id===s.id?s:x):[...p,s]);
+    setShowForm(false);setEditS(null);
+  };
+  const del=()=>{
+    const used=purchases.some(p=>p.supplierId===delS.id);
+    if(used){alert(`Cannot delete — ${delS.name} has purchases linked. Delete those first.`);setDelS(null);return;}
+    setSuppliers(p=>p.filter(x=>x.id!==delS.id));setDelS(null);
+  };
+  return(
+    <div className="anim">
+      <div className="row between mb4">
+        <input className="form-control" style={{width:280}} placeholder="🔍 Search suppliers..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <button className="btn btn-success" onClick={()=>{setEditS(null);setShowForm(true)}}>+ Add Supplier</button>
+      </div>
+      <div className="card">
+        <div className="tbl-wrap">
+          {filtered.length===0?<div className="empty"><div className="ei">🏭</div><h3>No Suppliers</h3><p>Add your first supplier</p></div>:(
+            <table>
+              <thead><tr><th>Name</th><th>GSTIN</th><th>State</th><th>Phone</th><th>Purchases</th><th>Actions</th></tr></thead>
+              <tbody>{filtered.map(s=>{
+                const pur=purchases.filter(p=>p.supplierId===s.id).length;
+                return(
+                  <tr key={s.id}>
+                    <td><div className="bold">{s.name}</div><div className="sm muted">{s.address}</div></td>
+                    <td className="mono sm">{s.gstin||'—'}</td>
+                    <td>{s.state} <span className="muted sm">({s.stateCode})</span></td>
+                    <td>{s.phone||'—'}</td>
+                    <td><span className="badge badge-success">{pur} purchase{pur!==1?'s':''}</span></td>
+                    <td><div className="row gap2">
+                      <button className="btn btn-outline btn-sm" onClick={()=>{setEditS(s);setShowForm(true)}}>✏ Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={()=>setDelS(s)}>🗑</button>
+                    </div></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      {showForm&&<PartyForm party={editS} type="supplier" onSave={save} onClose={()=>{setShowForm(false);setEditS(null)}}/>}
+      <Confirm show={!!delS} msg={`Delete supplier "${delS?.name}"? This cannot be undone.`} onYes={del} onNo={()=>setDelS(null)}/>
+    </div>
+  );
+};
+
+// ─── INVOICE PRINT ───────────────────────────────────────────────────────────
+const InvoicePrint=({invoice,co,onClose})=>(
+  <Modal show title="Invoice Preview — Ready to Print" size="modal-lg" onClose={onClose}
+    footer={<><button className="btn btn-outline no-print" onClick={onClose}>Close</button><button className="btn btn-primary no-print" onClick={()=>window.print()}>🖨 Print / Save PDF</button></>}>
+    <div className="pi">
+      <div className="pi-hd">
+        <div>
+          <div className="pi-co">{co.name}</div>
+          <div style={{fontSize:12,marginTop:4,color:'#64748B',lineHeight:1.7}}>{co.address}<br/>GSTIN: <strong>{co.gstin}</strong> | PAN: {co.pan}<br/>📞 {co.phone} | ✉ {co.email}</div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{fontSize:18,fontWeight:800,color:'var(--primary)'}}>TAX INVOICE</div>
+          <div className="mono" style={{fontSize:15,fontWeight:700,marginTop:4}}>{invoice.invoiceNo}</div>
+          <div style={{fontSize:12,color:'#64748B',marginTop:3}}>Date: {fd(invoice.date)}</div>
+          <div style={{marginTop:8,padding:'3px 12px',background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:11,fontWeight:700,display:'inline-block'}}>{invoice.taxType==='cgst_sgst'?'Intrastate (CGST+SGST)':'Interstate (IGST)'}</div>
+        </div>
+      </div>
+      <div className="pi-info">
+        <div className="pi-box"><h4>Bill From</h4><p><strong>{co.name}</strong><br/>{co.address}<br/>GSTIN: {co.gstin}</p></div>
+        <div className="pi-box"><h4>Bill To</h4><p><strong>{invoice.customerName}</strong><br/>{invoice.customerAddress}<br/>State: {invoice.customerState}<br/>GSTIN: {invoice.customerGstin}</p></div>
+      </div>
+      <table className="pi-table" style={{marginBottom:16}}>
+        <thead><tr><th style={{width:32}}>Sr</th><th>Product</th><th>HSN</th><th style={{textAlign:'right'}}>Qty</th><th style={{textAlign:'right'}}>Rate</th><th style={{textAlign:'right'}}>GST%</th>{invoice.taxType==='cgst_sgst'?<><th style={{textAlign:'right'}}>CGST</th><th style={{textAlign:'right'}}>SGST</th></>:<th style={{textAlign:'right'}}>IGST</th>}<th style={{textAlign:'right'}}>Total</th></tr></thead>
+        <tbody>{invoice.items.map((item,idx)=>(
+          <tr key={idx}><td style={{textAlign:'center'}}>{idx+1}</td><td>{item.name}</td><td className="mono">{item.hsn}</td>
+          <td className="tr">{item.qty}</td><td className="mono tr">{fc(item.rate)}</td><td className="tr">{item.gstRate}%</td>
+          {invoice.taxType==='cgst_sgst'?<><td className="mono tr">{fc(item.cgst)}</td><td className="mono tr">{fc(item.sgst)}</td></>:<td className="mono tr">{fc(item.igst)}</td>}
+          <td className="mono bold tr">{fc(item.total)}</td></tr>
+        ))}</tbody>
+      </table>
+      <div className="pi-totals sum-box">
+        <div className="sum-row"><span className="sum-lbl">Taxable Amount</span><span className="sum-amt">{fc(invoice.taxable)}</span></div>
+        {invoice.taxType==='cgst_sgst'?<><div className="sum-row"><span className="sum-lbl">CGST</span><span className="sum-amt">{fc(invoice.cgst)}</span></div><div className="sum-row"><span className="sum-lbl">SGST</span><span className="sum-amt">{fc(invoice.sgst)}</span></div></>:<div className="sum-row"><span className="sum-lbl">IGST</span><span className="sum-amt">{fc(invoice.igst)}</span></div>}
+        <div className="sum-row"><span className="sum-lbl">Total Tax</span><span className="sum-amt">{fc(invoice.totalTax)}</span></div>
+        <div className="sum-row"><span className="sum-lbl">Round Off</span><span className="sum-amt">{invoice.roundOff>=0?'+':''}{invoice.roundOff.toFixed(2)}</span></div>
+        <div className="sum-row sum-total"><span>Grand Total</span><span className="sum-amt" style={{fontSize:17,color:'var(--primary)'}}>{fc(invoice.grandTotal)}</span></div>
+      </div>
+      <div style={{marginTop:16,fontSize:12,color:'#64748B'}}><strong>Bank:</strong> {co.bank}</div>
+      <div style={{marginTop:14,padding:'10px 14px',background:'#D1FAE5',borderRadius:8,fontSize:12,color:'#065F46'}}>✅ Computer generated invoice. No physical signature required.</div>
+    </div>
+  </Modal>
+);
+
+// ─── INVOICE FORM ─────────────────────────────────────────────────────────────
+const InvoiceForm=({editInvoice,customers,products,invoices,co,onSave,onClose})=>{
+  const isEdit=!!editInvoice;
+  const [date,setDate]=useState(editInvoice?.date||tod());
+  const [custId,setCustId]=useState(editInvoice?.customerId||'');
+  const [items,setItems]=useState(editInvoice?.items?.map(i=>({productId:i.productId,name:i.name,hsn:i.hsn,qty:i.qty,rate:i.rate,gstRate:i.gstRate}))||[{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
   const cust=customers.find(c=>c.id===custId);
-  const taxType=cust&&cust.stateCode!==CO.stateCode?'igst':'cgst_sgst';
+  const taxType=cust&&cust.stateCode!==co.stateCode?'igst':'cgst_sgst';
   const totals=useMemo(()=>{
     const valid=items.filter(i=>i.productId&&i.qty>0&&i.rate>0);
     if(!valid.length)return{items:[],taxable:0,cgst:0,sgst:0,igst:0,totalTax:0,roundOff:0,grandTotal:0};
@@ -481,15 +728,22 @@ const InvoiceForm=({customers,products,invoices,onSave,onClose})=>{
   });
   const handleSave=()=>{
     if(!custId)return alert('Please select a customer');
-    if(totals.grandTotal===0)return alert('Please add at least one item');
-    const inv={id:'INV'+Date.now(),invoiceNo:nextInvNo(invoices),date,customerId:custId,customerName:cust.name,customerGstin:cust.gstin,customerAddress:cust.address,customerState:cust.state,customerStateCode:cust.stateCode,taxType,subtotal:totals.taxable,...totals,paid:false};
-    onSave(inv);
+    if(totals.grandTotal===0)return alert('Please add at least one item with qty & rate');
+    const inv={
+      id:editInvoice?.id||uid(),
+      invoiceNo:editInvoice?.invoiceNo||nextInvNo(invoices),
+      date,customerId:custId,customerName:cust.name,customerGstin:cust.gstin,
+      customerAddress:cust.address,customerState:cust.state,customerStateCode:cust.stateCode,
+      taxType,subtotal:totals.taxable,...totals,
+      paid:editInvoice?.paid||false
+    };
+    onSave(inv,isEdit);
   };
   return(
-    <Modal show title="Create Sales Invoice" size="modal-lg" onClose={onClose}
-      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={handleSave}>💾 Save Invoice</button></>}>
+    <Modal show title={isEdit?`Edit Invoice — ${editInvoice.invoiceNo}`:'Create Sales Invoice'} size="modal-lg" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={handleSave}>{isEdit?'💾 Update Invoice':'💾 Save Invoice'}</button></>}>
       <div className="g3 mb4">
-        <div className="form-group"><label className="form-label">Invoice Date *</label><input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        <FG label="Invoice Date *"><input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/></FG>
         <div className="form-group" style={{gridColumn:'span 2'}}><label className="form-label">Customer *</label>
           <select className="form-control" value={custId} onChange={e=>setCustId(e.target.value)}>
             <option value="">— Select Customer —</option>
@@ -506,11 +760,11 @@ const InvoiceForm=({customers,products,invoices,onSave,onClose})=>{
             <div key={idx} className="item-grid">
               <select className="form-control" value={item.productId} onChange={e=>updItem(idx,'productId',e.target.value)}>
                 <option value="">— Select —</option>
-                {products.map(p=><option key={p.id} value={p.id}>{p.name} (Stock: {p.stock} {p.unit})</option>)}
+                {products.map(p=><option key={p.id} value={p.id}>{p.name} (Stock: {p.stock})</option>)}
               </select>
               <div className="mono sm muted" style={{paddingLeft:4}}>{item.hsn||'—'}</div>
               <input type="number" className="form-control" value={item.qty} min="1" onChange={e=>updItem(idx,'qty',parseFloat(e.target.value)||0)}/>
-              <input type="number" className="form-control" value={item.rate} min="0" step="0.01" onChange={e=>updItem(idx,'rate',parseFloat(e.target.value)||0)}/>
+              <input type="number" className="form-control" value={item.rate} step="0.01" onChange={e=>updItem(idx,'rate',parseFloat(e.target.value)||0)}/>
               <select className="form-control" value={item.gstRate} onChange={e=>updItem(idx,'gstRate',parseFloat(e.target.value))}>
                 {GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}
               </select>
@@ -520,23 +774,20 @@ const InvoiceForm=({customers,products,invoices,onSave,onClose})=>{
         </div>
       </div>
       {totals.items.length>0&&(
-        <div className="card mb4">
-          <div style={{padding:'12px 16px',overflowX:'auto'}}>
-            <table style={{fontSize:12}}>
-              <thead><tr><th>Item</th><th style={{textAlign:'right'}}>Taxable</th>{taxType==='cgst_sgst'?<><th style={{textAlign:'right'}}>CGST</th><th style={{textAlign:'right'}}>SGST</th></>:<th style={{textAlign:'right'}}>IGST</th>}<th style={{textAlign:'right'}}>Total</th></tr></thead>
-              <tbody>{totals.items.map((it,i)=>(
-                <tr key={i}><td>{it.name} × {it.qty}</td><td className="mono tr">{fc(it.taxable)}</td>{taxType==='cgst_sgst'?<><td className="mono tr">{fc(it.cgst)}</td><td className="mono tr">{fc(it.sgst)}</td></>:<td className="mono tr">{fc(it.igst)}</td>}<td className="mono tr bold">{fc(it.total)}</td></tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </div>
+        <div className="card mb4"><div style={{padding:'12px 16px',overflowX:'auto'}}>
+          <table style={{fontSize:12}}>
+            <thead><tr><th>Item</th><th style={{textAlign:'right'}}>Taxable</th>{taxType==='cgst_sgst'?<><th style={{textAlign:'right'}}>CGST</th><th style={{textAlign:'right'}}>SGST</th></>:<th style={{textAlign:'right'}}>IGST</th>}<th style={{textAlign:'right'}}>Total</th></tr></thead>
+            <tbody>{totals.items.map((it,i)=>(
+              <tr key={i}><td>{it.name} × {it.qty}</td><td className="mono tr">{fc(it.taxable)}</td>{taxType==='cgst_sgst'?<><td className="mono tr">{fc(it.cgst)}</td><td className="mono tr">{fc(it.sgst)}</td></>:<td className="mono tr">{fc(it.igst)}</td>}<td className="mono tr bold">{fc(it.total)}</td></tr>
+            ))}</tbody>
+          </table>
+        </div></div>
       )}
       {totals.grandTotal>0&&(
         <div style={{maxWidth:340,marginLeft:'auto'}}>
           <div className="sum-box">
             <div className="sum-row"><span className="sum-lbl">Subtotal (Taxable)</span><span className="sum-amt">{fc(totals.taxable)}</span></div>
             {taxType==='cgst_sgst'?<><div className="sum-row"><span className="sum-lbl">CGST</span><span className="sum-amt">{fc(totals.cgst)}</span></div><div className="sum-row"><span className="sum-lbl">SGST</span><span className="sum-amt">{fc(totals.sgst)}</span></div></>:<div className="sum-row"><span className="sum-lbl">IGST</span><span className="sum-amt">{fc(totals.igst)}</span></div>}
-            <div className="sum-row"><span className="sum-lbl">Total Tax</span><span className="sum-amt">{fc(totals.totalTax)}</span></div>
             <div className="sum-row"><span className="sum-lbl">Round Off</span><span className="sum-amt">{totals.roundOff>=0?'+':''}{totals.roundOff.toFixed(2)}</span></div>
             <div className="sum-row sum-total"><span>Grand Total</span><span className="sum-amt" style={{fontSize:16,color:'var(--primary)'}}>{fc(totals.grandTotal)}</span></div>
           </div>
@@ -546,96 +797,103 @@ const InvoiceForm=({customers,products,invoices,onSave,onClose})=>{
   );
 };
 
-// ─── INVOICE PRINT ─────────────────────────────────────────────────────────────
-const InvoicePrint=({invoice,onClose})=>(
-  <Modal show title="Invoice Preview — Ready to Print" size="modal-lg" onClose={onClose}
-    footer={<><button className="btn btn-outline no-print" onClick={onClose}>Close</button><button className="btn btn-primary no-print" onClick={()=>window.print()}>🖨 Print / Save PDF</button></>}>
-    <div className="pi">
-      <div className="pi-hd">
-        <div>
-          <div className="pi-co">{CO.name}</div>
-          <div style={{fontSize:12,marginTop:4,color:'#64748B',lineHeight:1.7}}>{CO.address}<br/>GSTIN: <strong>{CO.gstin}</strong> | PAN: {CO.pan}<br/>📞 {CO.phone} | ✉ {CO.email}</div>
-        </div>
-        <div style={{textAlign:'right'}}>
-          <div style={{fontSize:18,fontWeight:800,color:'var(--primary)'}}>TAX INVOICE</div>
-          <div className="mono" style={{fontSize:15,fontWeight:700,marginTop:4}}>{invoice.invoiceNo}</div>
-          <div style={{fontSize:12,color:'#64748B',marginTop:3}}>Date: {fd(invoice.date)}</div>
-          <div style={{marginTop:8,padding:'3px 12px',background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:11,fontWeight:700,display:'inline-block'}}>{invoice.taxType==='cgst_sgst'?'Intrastate (CGST+SGST)':'Interstate (IGST)'}</div>
-        </div>
-      </div>
-      <div className="pi-info">
-        <div className="pi-box"><h4>Bill From</h4><p><strong>{CO.name}</strong><br/>{CO.address}<br/>GSTIN: {CO.gstin}</p></div>
-        <div className="pi-box"><h4>Bill To</h4><p><strong>{invoice.customerName}</strong><br/>{invoice.customerAddress}<br/>State: {invoice.customerState}<br/>GSTIN: {invoice.customerGstin}</p></div>
-      </div>
-      <table className="pi-table" style={{marginBottom:16}}>
-        <thead><tr><th style={{width:32}}>Sr</th><th>Product</th><th>HSN</th><th style={{textAlign:'right'}}>Qty</th><th style={{textAlign:'right'}}>Rate</th><th style={{textAlign:'right'}}>GST%</th>{invoice.taxType==='cgst_sgst'?<><th style={{textAlign:'right'}}>CGST</th><th style={{textAlign:'right'}}>SGST</th></>:<th style={{textAlign:'right'}}>IGST</th>}<th style={{textAlign:'right'}}>Total</th></tr></thead>
-        <tbody>{invoice.items.map((item,idx)=>(
-          <tr key={idx}>
-            <td style={{textAlign:'center'}}>{idx+1}</td><td>{item.name}</td><td className="mono">{item.hsn}</td>
-            <td className="tr">{item.qty}</td><td className="mono tr">{fc(item.rate)}</td><td className="tr">{item.gstRate}%</td>
-            {invoice.taxType==='cgst_sgst'?<><td className="mono tr">{fc(item.cgst)}</td><td className="mono tr">{fc(item.sgst)}</td></>:<td className="mono tr">{fc(item.igst)}</td>}
-            <td className="mono bold tr">{fc(item.total)}</td>
-          </tr>
-        ))}</tbody>
-      </table>
-      <div className="pi-totals sum-box">
-        <div className="sum-row"><span className="sum-lbl">Taxable Amount</span><span className="sum-amt">{fc(invoice.taxable)}</span></div>
-        {invoice.taxType==='cgst_sgst'?<><div className="sum-row"><span className="sum-lbl">CGST</span><span className="sum-amt">{fc(invoice.cgst)}</span></div><div className="sum-row"><span className="sum-lbl">SGST</span><span className="sum-amt">{fc(invoice.sgst)}</span></div></>:<div className="sum-row"><span className="sum-lbl">IGST</span><span className="sum-amt">{fc(invoice.igst)}</span></div>}
-        <div className="sum-row"><span className="sum-lbl">Total Tax</span><span className="sum-amt">{fc(invoice.totalTax)}</span></div>
-        <div className="sum-row"><span className="sum-lbl">Round Off</span><span className="sum-amt">{invoice.roundOff>=0?'+':''}{invoice.roundOff.toFixed(2)}</span></div>
-        <div className="sum-row sum-total"><span>Grand Total</span><span className="sum-amt" style={{fontSize:17,color:'var(--primary)'}}>{fc(invoice.grandTotal)}</span></div>
-      </div>
-      <div style={{marginTop:16,fontSize:12,color:'#64748B'}}><strong>Bank:</strong> {CO.bank}</div>
-      <div style={{marginTop:14,padding:'10px 14px',background:'#D1FAE5',borderRadius:8,fontSize:12,color:'#065F46'}}>✅ Computer generated invoice. No physical signature required. Subject to {CO.state} jurisdiction.</div>
-    </div>
-  </Modal>
-);
-
-// ─── PURCHASE MODULE ───────────────────────────────────────────────────────────
-const PurchaseModule=({purchases,setPurchases,suppliers,products,setProducts})=>{
+// ─── BILLING MODULE ───────────────────────────────────────────────────────────
+const BillingModule=({invoices,setInvoices,customers,products,setProducts,co})=>{
   const [showForm,setShowForm]=useState(false);
-  const sorted=[...purchases].sort((a,b)=>b.date.localeCompare(a.date));
-  const handleCreate=pur=>{
-    setPurchases(p=>[...p,pur]);
-    setProducts(p=>p.map(prod=>{const item=pur.items.find(i=>i.productId===prod.id);return item?{...prod,stock:prod.stock+item.qty}:prod}));
-    setShowForm(false);
+  const [editInv,setEditInv]=useState(null);
+  const [printInv,setPrintInv]=useState(null);
+  const [delInv,setDelInv]=useState(null);
+  const [fs,setFs]=useState('all');
+  const [search,setSearch]=useState('');
+  const filtered=[...invoices]
+    .filter(i=>fs==='all'||(fs==='paid'?i.paid:!i.paid))
+    .filter(i=>i.invoiceNo.toLowerCase().includes(search.toLowerCase())||i.customerName.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>b.date.localeCompare(a.date));
+
+  const handleCreate=(inv,isEdit)=>{
+    if(isEdit){
+      // On edit: restore old stock, apply new stock
+      const old=invoices.find(i=>i.id===inv.id);
+      setProducts(p=>p.map(prod=>{
+        const oldItem=old?.items.find(i=>i.productId===prod.id);
+        const newItem=inv.items.find(i=>i.productId===prod.id);
+        let stock=prod.stock;
+        if(oldItem)stock+=oldItem.qty; // restore
+        if(newItem)stock=Math.max(0,stock-newItem.qty); // deduct
+        return{...prod,stock};
+      }));
+      setInvoices(p=>p.map(i=>i.id===inv.id?inv:i));
+    } else {
+      setInvoices(p=>[...p,inv]);
+      setProducts(p=>p.map(prod=>{const item=inv.items.find(i=>i.productId===prod.id);return item?{...prod,stock:Math.max(0,prod.stock-item.qty)}:prod}));
+    }
+    setShowForm(false);setEditInv(null);
   };
+
+  const handleDelete=()=>{
+    // Restore stock on delete
+    const inv=invoices.find(i=>i.id===delInv.id);
+    if(inv){setProducts(p=>p.map(prod=>{const item=inv.items.find(i=>i.productId===prod.id);return item?{...prod,stock:prod.stock+item.qty}:prod}));}
+    setInvoices(p=>p.filter(i=>i.id!==delInv.id));
+    setDelInv(null);
+  };
+
+  const togglePaid=id=>setInvoices(p=>p.map(i=>i.id===id?{...i,paid:!i.paid}:i));
+
   return(
     <div className="anim">
-      <div className="row between mb4"><div></div><button className="btn btn-success" onClick={()=>setShowForm(true)}>+ New Purchase Entry</button></div>
+      <div className="row between mb4 gap3" style={{flexWrap:'wrap'}}>
+        <div className="row gap2" style={{flexWrap:'wrap'}}>
+          <input className="form-control" style={{width:220}} placeholder="🔍 Search..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          {['all','paid','pending'].map(s=><button key={s} className={`filter-btn${fs===s?' on':''}`} onClick={()=>setFs(s)}>{s.charAt(0).toUpperCase()+s.slice(1)}</button>)}
+        </div>
+        <button className="btn btn-primary" onClick={()=>{setEditInv(null);setShowForm(true)}}>+ New Invoice</button>
+      </div>
       <div className="card">
         <div className="tbl-wrap">
-          {sorted.length===0?(
-            <div className="empty"><div className="ei">📦</div><h3>No Purchase Entries</h3><p>Add purchases to track stock & input GST credit</p></div>
+          {filtered.length===0?(
+            <div className="empty"><div className="ei">🧾</div><h3>No Invoices Found</h3><p>Create your first sales invoice</p></div>
           ):(
             <table>
-              <thead><tr><th>Purchase No</th><th>Date</th><th>Supplier</th><th>Tax Type</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Input GST</th><th style={{textAlign:'right'}}>Total</th></tr></thead>
-              <tbody>{sorted.map(p=>(
-                <tr key={p.id}>
-                  <td className="mono bold">{p.purchaseNo}</td><td>{fd(p.date)}</td>
-                  <td><div className="bold">{p.supplierName}</div><div className="sm muted">{p.supplierGstin}</div></td>
-                  <td><span className={`badge ${p.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{p.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
-                  <td className="mono tr">{fc(p.taxable)}</td>
-                  <td className="mono tr" style={{color:'var(--success)'}}>{fc(p.totalTax)}</td>
-                  <td className="mono bold tr">{fc(p.grandTotal)}</td>
+              <thead><tr><th>Invoice No</th><th>Date</th><th>Customer</th><th>Tax Type</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>GST</th><th style={{textAlign:'right'}}>Total</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>{filtered.map(inv=>(
+                <tr key={inv.id}>
+                  <td className="mono bold">{inv.invoiceNo}</td>
+                  <td>{fd(inv.date)}</td>
+                  <td><div className="bold">{inv.customerName}</div><div className="sm muted">{inv.customerState}</div></td>
+                  <td><span className={`badge ${inv.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{inv.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
+                  <td className="mono tr">{fc(inv.taxable)}</td>
+                  <td className="mono tr">{fc(inv.totalTax)}</td>
+                  <td className="mono bold tr">{fc(inv.grandTotal)}</td>
+                  <td><span className={`badge ${inv.paid?'badge-success':'badge-warning'}`} style={{cursor:'pointer'}} onClick={()=>togglePaid(inv.id)} title="Click to toggle">{inv.paid?'✓ Paid':'Pending'}</span></td>
+                  <td>
+                    <div className="row gap2">
+                      <button className="btn btn-outline btn-sm" onClick={()=>setPrintInv(inv)}>🖨</button>
+                      <button className="btn btn-outline btn-sm" onClick={()=>{setEditInv(inv);setShowForm(true)}}>✏</button>
+                      <button className="btn btn-danger btn-sm" onClick={()=>setDelInv(inv)}>🗑</button>
+                    </div>
+                  </td>
                 </tr>
               ))}</tbody>
             </table>
           )}
         </div>
       </div>
-      {showForm&&<PurchaseForm suppliers={suppliers} products={products} purchases={purchases} onSave={handleCreate} onClose={()=>setShowForm(false)}/>}
+      {showForm&&<InvoiceForm editInvoice={editInv} customers={customers} products={products} invoices={invoices} co={co} onSave={handleCreate} onClose={()=>{setShowForm(false);setEditInv(null)}}/>}
+      {printInv&&<InvoicePrint invoice={printInv} co={co} onClose={()=>setPrintInv(null)}/>}
+      <Confirm show={!!delInv} msg={`Delete invoice "${delInv?.invoiceNo}" for ${delInv?.customerName}? Stock will be restored.`} onYes={handleDelete} onNo={()=>setDelInv(null)}/>
     </div>
   );
 };
 
 // ─── PURCHASE FORM ─────────────────────────────────────────────────────────────
-const PurchaseForm=({suppliers,products,purchases,onSave,onClose})=>{
-  const [date,setDate]=useState(tod());
-  const [suppId,setSuppId]=useState('');
-  const [items,setItems]=useState([{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
+const PurchaseForm=({editPurchase,suppliers,products,purchases,co,onSave,onClose})=>{
+  const isEdit=!!editPurchase;
+  const [date,setDate]=useState(editPurchase?.date||tod());
+  const [suppId,setSuppId]=useState(editPurchase?.supplierId||'');
+  const [items,setItems]=useState(editPurchase?.items?.map(i=>({productId:i.productId,name:i.name,hsn:i.hsn,qty:i.qty,rate:i.rate,gstRate:i.gstRate}))||[{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
   const supp=suppliers.find(s=>s.id===suppId);
-  const taxType=supp&&supp.stateCode!==CO.stateCode?'igst':'cgst_sgst';
+  const taxType=supp&&supp.stateCode!==co.stateCode?'igst':'cgst_sgst';
   const totals=useMemo(()=>{
     const valid=items.filter(i=>i.productId&&i.qty>0&&i.rate>0);
     if(!valid.length)return{items:[],taxable:0,cgst:0,sgst:0,igst:0,totalTax:0,roundOff:0,grandTotal:0};
@@ -647,15 +905,15 @@ const PurchaseForm=({suppliers,products,purchases,onSave,onClose})=>{
     return u;
   });
   const handleSave=()=>{
-    if(!suppId||totals.grandTotal===0)return alert('Please fill all fields');
-    const pur={id:'PUR'+Date.now(),purchaseNo:nextPurNo(purchases),date,supplierId:suppId,supplierName:supp.name,supplierGstin:supp.gstin,taxType,subtotal:totals.taxable,...totals,paid:false};
-    onSave(pur);
+    if(!suppId||totals.grandTotal===0)return alert('Please select supplier and add items');
+    const pur={id:editPurchase?.id||uid(),purchaseNo:editPurchase?.purchaseNo||nextPurNo(purchases),date,supplierId:suppId,supplierName:supp.name,supplierGstin:supp.gstin,taxType,subtotal:totals.taxable,...totals,paid:editPurchase?.paid||false};
+    onSave(pur,isEdit);
   };
   return(
-    <Modal show title="New Purchase Entry" size="modal-lg" onClose={onClose}
-      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-success" onClick={handleSave}>💾 Save Purchase</button></>}>
+    <Modal show title={isEdit?`Edit Purchase — ${editPurchase.purchaseNo}`:'New Purchase Entry'} size="modal-lg" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-success" onClick={handleSave}>{isEdit?'💾 Update':'💾 Save Purchase'}</button></>}>
       <div className="g3 mb4">
-        <div className="form-group"><label className="form-label">Purchase Date *</label><input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        <FG label="Purchase Date *"><input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/></FG>
         <div className="form-group" style={{gridColumn:'span 2'}}><label className="form-label">Supplier *</label>
           <select className="form-control" value={suppId} onChange={e=>setSuppId(e.target.value)}>
             <option value="">— Select Supplier —</option>
@@ -677,9 +935,7 @@ const PurchaseForm=({suppliers,products,purchases,onSave,onClose})=>{
               <div className="mono sm muted">{item.hsn||'—'}</div>
               <input type="number" className="form-control" value={item.qty} min="1" onChange={e=>updItem(idx,'qty',parseFloat(e.target.value)||0)}/>
               <input type="number" className="form-control" value={item.rate} step="0.01" onChange={e=>updItem(idx,'rate',parseFloat(e.target.value)||0)}/>
-              <select className="form-control" value={item.gstRate} onChange={e=>updItem(idx,'gstRate',parseFloat(e.target.value))}>
-                {GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}
-              </select>
+              <select className="form-control" value={item.gstRate} onChange={e=>updItem(idx,'gstRate',parseFloat(e.target.value))}>{GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}</select>
               <button className="btn btn-danger btn-sm" onClick={()=>setItems(p=>p.filter((_,i)=>i!==idx))} disabled={items.length===1}>✕</button>
             </div>
           ))}
@@ -698,230 +954,281 @@ const PurchaseForm=({suppliers,products,purchases,onSave,onClose})=>{
   );
 };
 
-// ─── INVENTORY ─────────────────────────────────────────────────────────────────
+// ─── PURCHASE MODULE ──────────────────────────────────────────────────────────
+const PurchaseModule=({purchases,setPurchases,suppliers,products,setProducts,co})=>{
+  const [showForm,setShowForm]=useState(false);
+  const [editPur,setEditPur]=useState(null);
+  const [delPur,setDelPur]=useState(null);
+  const sorted=[...purchases].sort((a,b)=>b.date.localeCompare(a.date));
+
+  const handleSave=(pur,isEdit)=>{
+    if(isEdit){
+      const old=purchases.find(p=>p.id===pur.id);
+      setProducts(p=>p.map(prod=>{
+        const oldItem=old?.items.find(i=>i.productId===prod.id);
+        const newItem=pur.items.find(i=>i.productId===prod.id);
+        let stock=prod.stock;
+        if(oldItem)stock-=oldItem.qty; // reverse old
+        if(newItem)stock+=newItem.qty; // apply new
+        return{...prod,stock:Math.max(0,stock)};
+      }));
+      setPurchases(p=>p.map(x=>x.id===pur.id?pur:x));
+    } else {
+      setPurchases(p=>[...p,pur]);
+      setProducts(p=>p.map(prod=>{const item=pur.items.find(i=>i.productId===prod.id);return item?{...prod,stock:prod.stock+item.qty}:prod}));
+    }
+    setShowForm(false);setEditPur(null);
+  };
+
+  const handleDelete=()=>{
+    const pur=purchases.find(p=>p.id===delPur.id);
+    if(pur){setProducts(p=>p.map(prod=>{const item=pur.items.find(i=>i.productId===prod.id);return item?{...prod,stock:Math.max(0,prod.stock-item.qty)}:prod}));}
+    setPurchases(p=>p.filter(x=>x.id!==delPur.id));setDelPur(null);
+  };
+
+  return(
+    <div className="anim">
+      <div className="row between mb4"><div></div><button className="btn btn-success" onClick={()=>{setEditPur(null);setShowForm(true)}}>+ New Purchase Entry</button></div>
+      <div className="card">
+        <div className="tbl-wrap">
+          {sorted.length===0?<div className="empty"><div className="ei">📦</div><h3>No Purchases</h3><p>Add purchases to track stock & input GST</p></div>:(
+            <table>
+              <thead><tr><th>Purchase No</th><th>Date</th><th>Supplier</th><th>Tax Type</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Input GST</th><th style={{textAlign:'right'}}>Total</th><th>Actions</th></tr></thead>
+              <tbody>{sorted.map(p=>(
+                <tr key={p.id}>
+                  <td className="mono bold">{p.purchaseNo}</td><td>{fd(p.date)}</td>
+                  <td><div className="bold">{p.supplierName}</div><div className="sm muted">{p.supplierGstin}</div></td>
+                  <td><span className={`badge ${p.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{p.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
+                  <td className="mono tr">{fc(p.taxable)}</td>
+                  <td className="mono tr" style={{color:'var(--success)'}}>{fc(p.totalTax)}</td>
+                  <td className="mono bold tr">{fc(p.grandTotal)}</td>
+                  <td><div className="row gap2">
+                    <button className="btn btn-outline btn-sm" onClick={()=>{setEditPur(p);setShowForm(true)}}>✏ Edit</button>
+                    <button className="btn btn-danger btn-sm" onClick={()=>setDelPur(p)}>🗑</button>
+                  </div></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      {showForm&&<PurchaseForm editPurchase={editPur} suppliers={suppliers} products={products} purchases={purchases} co={co} onSave={handleSave} onClose={()=>{setShowForm(false);setEditPur(null)}}/>}
+      <Confirm show={!!delPur} msg={`Delete purchase "${delPur?.purchaseNo}"? Stock will be reversed.`} onYes={handleDelete} onNo={()=>setDelPur(null)}/>
+    </div>
+  );
+};
+
+// ─── INVENTORY MODULE ─────────────────────────────────────────────────────────
+const ProductForm=({product,onSave,onClose})=>{
+  const [f,setF]=useState(product||{name:'',hsn:'',unit:'PCS',salePrice:'',purchasePrice:'',gstRate:18,stock:0,minStock:5});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  return(
+    <Modal show title={product?'Edit Product':'Add Product'} size="modal-sm" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(!f.name)return alert('Name required');onSave({...f,id:f.id||uid()})}}>Save</button></>}>
+      <FI label="Product Name *" value={f.name} onChange={e=>s('name',e.target.value)} placeholder="Product name"/>
+      <div className="g2">
+        <FI label="HSN Code" value={f.hsn} onChange={e=>s('hsn',e.target.value)} placeholder="85171210"/>
+        <FG label="Unit"><select className="form-control" value={f.unit} onChange={e=>s('unit',e.target.value)}><option>PCS</option><option>KG</option><option>LTR</option><option>MTR</option><option>BOX</option><option>PACK</option><option>SET</option><option>NOS</option></select></FG>
+      </div>
+      <div className="g2">
+        <FI label="Sale Price (₹)" type="number" value={f.salePrice} onChange={e=>s('salePrice',parseFloat(e.target.value)||0)}/>
+        <FI label="Purchase Price (₹)" type="number" value={f.purchasePrice} onChange={e=>s('purchasePrice',parseFloat(e.target.value)||0)}/>
+      </div>
+      <div className="g2">
+        <FG label="GST Rate"><select className="form-control" value={f.gstRate} onChange={e=>s('gstRate',parseFloat(e.target.value))}>{GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}</select></FG>
+        <FI label="Opening Stock" type="number" value={f.stock} onChange={e=>s('stock',parseInt(e.target.value)||0)}/>
+      </div>
+      <FI label="Min Stock Alert" type="number" value={f.minStock} onChange={e=>s('minStock',parseInt(e.target.value)||0)}/>
+    </Modal>
+  );
+};
+
 const InventoryModule=({products,setProducts})=>{
   const [showForm,setShowForm]=useState(false);
   const [editP,setEditP]=useState(null);
+  const [delP,setDelP]=useState(null);
   const [filterLow,setFilterLow]=useState(false);
+  const [search,setSearch]=useState('');
   const low=products.filter(p=>p.stock<=p.minStock).length;
-  const shown=filterLow?products.filter(p=>p.stock<=p.minStock):products;
-  const handleSave=p=>{
-    if(editP)setProducts(prev=>prev.map(x=>x.id===p.id?p:x));
-    else setProducts(prev=>[...prev,{...p,id:'P'+Date.now()}]);
+  const shown=products.filter(p=>{
+    const matchSearch=p.name.toLowerCase().includes(search.toLowerCase())||p.hsn.includes(search);
+    return matchSearch&&(!filterLow||p.stock<=p.minStock);
+  });
+  const save=p=>{
+    setProducts(prev=>editP?prev.map(x=>x.id===p.id?p:x):[...prev,p]);
     setShowForm(false);setEditP(null);
   };
-  const handleDel=id=>{if(window.confirm('Delete this product?'))setProducts(p=>p.filter(x=>x.id!==id))};
   return(
     <div className="anim">
-      {low>0&&<div className="alert alert-warn mb4">⚠️ <strong>{low}</strong> product{low>1?'s are':' is'} at or below minimum stock. Please reorder soon.</div>}
-      <div className="row between mb4">
+      {low>0&&<div className="alert alert-warn mb4">⚠️ <strong>{low}</strong> product{low>1?'s are':' is'} below minimum stock level.</div>}
+      <div className="row between mb4 gap3" style={{flexWrap:'wrap'}}>
         <div className="row gap2">
-          <button className={`filter-btn${!filterLow?' on':''}`} onClick={()=>setFilterLow(false)}>All Products ({products.length})</button>
-          <button className={`filter-btn${filterLow?' on':''}`} onClick={()=>setFilterLow(true)} style={low>0?{borderColor:'var(--danger)',color:'var(--danger)'}:{}}>⚠ Low Stock ({low})</button>
+          <input className="form-control" style={{width:220}} placeholder="🔍 Search products..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <button className={`filter-btn${!filterLow?' on':''}`} onClick={()=>setFilterLow(false)}>All ({products.length})</button>
+          <button className={`filter-btn${filterLow?' on':''}`} onClick={()=>setFilterLow(true)}>⚠ Low Stock ({low})</button>
         </div>
         <button className="btn btn-primary" onClick={()=>{setEditP(null);setShowForm(true)}}>+ Add Product</button>
       </div>
       <div className="card">
         <div className="tbl-wrap">
           <table>
-            <thead><tr><th>Product Name</th><th>HSN</th><th>Unit</th><th>GST</th><th style={{textAlign:'right'}}>Sale Price</th><th style={{textAlign:'right'}}>Purchase Price</th><th style={{textAlign:'center'}}>Stock</th><th style={{textAlign:'center'}}>Min Stock</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Product Name</th><th>HSN</th><th>Unit</th><th>GST</th><th style={{textAlign:'right'}}>Sale Price</th><th style={{textAlign:'right'}}>Purchase Price</th><th style={{textAlign:'center'}}>Stock</th><th style={{textAlign:'center'}}>Min</th><th>Actions</th></tr></thead>
             <tbody>{shown.map(p=>(
               <tr key={p.id}>
                 <td className="bold">{p.name}</td>
-                <td className="mono">{p.hsn}</td>
-                <td>{p.unit}</td>
+                <td className="mono">{p.hsn}</td><td>{p.unit}</td>
                 <td><span className="badge badge-primary">{p.gstRate}%</span></td>
                 <td className="mono tr">{fc(p.salePrice)}</td>
                 <td className="mono tr">{fc(p.purchasePrice)}</td>
                 <td className="tc"><span className={p.stock<=p.minStock?'stock-low':'stock-ok'}>{p.stock}</span></td>
                 <td className="tc muted">{p.minStock}</td>
-                <td><div className="row gap2"><button className="btn btn-outline btn-sm" onClick={()=>{setEditP(p);setShowForm(true)}}>Edit</button><button className="btn btn-danger btn-sm" onClick={()=>handleDel(p.id)}>Del</button></div></td>
+                <td><div className="row gap2">
+                  <button className="btn btn-outline btn-sm" onClick={()=>{setEditP(p);setShowForm(true)}}>✏ Edit</button>
+                  <button className="btn btn-danger btn-sm" onClick={()=>setDelP(p)}>🗑</button>
+                </div></td>
               </tr>
             ))}</tbody>
           </table>
         </div>
       </div>
-      {showForm&&<ProductForm product={editP} onSave={handleSave} onClose={()=>{setShowForm(false);setEditP(null)}}/>}
+      {showForm&&<ProductForm product={editP} onSave={save} onClose={()=>{setShowForm(false);setEditP(null)}}/>}
+      <Confirm show={!!delP} msg={`Delete product "${delP?.name}"?`} onYes={()=>{setProducts(p=>p.filter(x=>x.id!==delP.id));setDelP(null);}} onNo={()=>setDelP(null)}/>
     </div>
   );
 };
 
-const ProductForm=({product,onSave,onClose})=>{
-  const [f,setF]=useState(product||{name:'',hsn:'',unit:'PCS',salePrice:'',purchasePrice:'',gstRate:18,stock:0,minStock:5});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  return(
-    <Modal show title={product?'Edit Product':'Add New Product'} size="modal-sm" onClose={onClose}
-      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(!f.name)return alert('Name required');onSave(f)}}>Save</button></>}>
-      <div className="form-group"><label className="form-label">Product Name *</label><input className="form-control" value={f.name} onChange={e=>s('name',e.target.value)} placeholder="Samsung Mobile A54"/></div>
-      <div className="g2">
-        <div className="form-group"><label className="form-label">HSN Code</label><input className="form-control mono" value={f.hsn} onChange={e=>s('hsn',e.target.value)} placeholder="85171210"/></div>
-        <div className="form-group"><label className="form-label">Unit</label><select className="form-control" value={f.unit} onChange={e=>s('unit',e.target.value)}><option>PCS</option><option>KG</option><option>LTR</option><option>MTR</option><option>BOX</option><option>PACK</option><option>SET</option><option>NOS</option></select></div>
-      </div>
-      <div className="g2">
-        <div className="form-group"><label className="form-label">Sale Price (₹)</label><input type="number" className="form-control" value={f.salePrice} onChange={e=>s('salePrice',parseFloat(e.target.value)||0)}/></div>
-        <div className="form-group"><label className="form-label">Purchase Price (₹)</label><input type="number" className="form-control" value={f.purchasePrice} onChange={e=>s('purchasePrice',parseFloat(e.target.value)||0)}/></div>
-      </div>
-      <div className="g2">
-        <div className="form-group"><label className="form-label">GST Rate</label><select className="form-control" value={f.gstRate} onChange={e=>s('gstRate',parseFloat(e.target.value))}>{GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}</select></div>
-        <div className="form-group"><label className="form-label">Opening Stock</label><input type="number" className="form-control" value={f.stock} onChange={e=>s('stock',parseInt(e.target.value)||0)}/></div>
-      </div>
-      <div className="form-group"><label className="form-label">Minimum Stock Alert</label><input type="number" className="form-control" value={f.minStock} onChange={e=>s('minStock',parseInt(e.target.value)||0)}/></div>
-    </Modal>
-  );
-};
-
-// ─── GST SUMMARY ───────────────────────────────────────────────────────────────
+// ─── GST SUMMARY ──────────────────────────────────────────────────────────────
 const GSTSummaryModule=({invoices,purchases})=>{
   const [filter,setFilter]=useState('month');
-  const [cs,setCs]=useState('');
-  const [ce,setCe]=useState('');
+  const [cs,setCs]=useState('');const [ce,setCe]=useState('');
   const range=getRange(filter,cs,ce);
   const fInv=invoices.filter(i=>inRange(i.date,range.start,range.end));
   const fPur=purchases.filter(p=>inRange(p.date,range.start,range.end));
-  const oCgst=fInv.reduce((s,i)=>s+(i.cgst||0),0);
-  const oSgst=fInv.reduce((s,i)=>s+(i.sgst||0),0);
-  const oIgst=fInv.reduce((s,i)=>s+(i.igst||0),0);
-  const oTotal=oCgst+oSgst+oIgst;
-  const oTaxable=fInv.reduce((s,i)=>s+(i.taxable||0),0);
-  const iCgst=fPur.reduce((s,p)=>s+(p.cgst||0),0);
-  const iSgst=fPur.reduce((s,p)=>s+(p.sgst||0),0);
-  const iIgst=fPur.reduce((s,p)=>s+(p.igst||0),0);
-  const iTotal=iCgst+iSgst+iIgst;
-  const iTaxable=fPur.reduce((s,p)=>s+(p.taxable||0),0);
+  const oCgst=fInv.reduce((s,i)=>s+(i.cgst||0),0),oSgst=fInv.reduce((s,i)=>s+(i.sgst||0),0),oIgst=fInv.reduce((s,i)=>s+(i.igst||0),0);
+  const oTotal=oCgst+oSgst+oIgst,oTaxable=fInv.reduce((s,i)=>s+(i.taxable||0),0);
+  const iCgst=fPur.reduce((s,p)=>s+(p.cgst||0),0),iSgst=fPur.reduce((s,p)=>s+(p.sgst||0),0),iIgst=fPur.reduce((s,p)=>s+(p.igst||0),0);
+  const iTotal=iCgst+iSgst+iIgst,iTaxable=fPur.reduce((s,p)=>s+(p.taxable||0),0);
   const net=oTotal-iTotal;
   const filters=[{id:'today',l:'Today'},{id:'week',l:'This Week'},{id:'month',l:'This Month'},{id:'lastmonth',l:'Last Month'},{id:'quarter',l:'This Quarter'},{id:'year',l:'This FY'},{id:'custom',l:'Custom'}];
   return(
     <div className="anim">
       <div className="filter-bar">
         {filters.map(f=><button key={f.id} className={`filter-btn${filter===f.id?' on':''}`} onClick={()=>setFilter(f.id)}>{f.l}</button>)}
-        {filter==='custom'&&<>
-          <input type="date" className="form-control" style={{width:150}} value={cs} onChange={e=>setCs(e.target.value)}/>
-          <span className="muted sm">to</span>
-          <input type="date" className="form-control" style={{width:150}} value={ce} onChange={e=>setCe(e.target.value)}/>
-        </>}
+        {filter==='custom'&&<><input type="date" className="form-control" style={{width:150}} value={cs} onChange={e=>setCs(e.target.value)}/><span className="muted sm">to</span><input type="date" className="form-control" style={{width:150}} value={ce} onChange={e=>setCe(e.target.value)}/></>}
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,marginBottom:20}}>
-        <div className="gst-card" style={{borderLeft:'4px solid var(--danger)'}}>
-          <div className="gst-ttl">Output GST (From Sales)</div>
-          <div className="gst-amt" style={{color:'var(--danger)'}}>{fc(oTotal)}</div>
-          <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:5}}>
-            {[['CGST',fc(oCgst)],['SGST',fc(oSgst)],['IGST',fc(oIgst)]].map(([l,v])=>(
-              <div key={l} style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{l}</span><span className="mono bold">{v}</span></div>
-            ))}
-            <div style={{borderTop:'1px solid var(--border)',paddingTop:5,marginTop:2,display:'flex',justifyContent:'space-between'}}><span className="muted">Taxable Sales</span><span className="mono">{fc(oTaxable)}</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">Invoices Count</span><span className="bold">{fInv.length}</span></div>
+        {[
+          {title:'Output GST (Sales)',color:'var(--danger)',total:oTotal,c:oCgst,sg:oSgst,ig:oIgst,taxable:oTaxable,count:fInv.length,label:'Invoices'},
+          {title:'Input GST (Purchases)',color:'var(--success)',total:iTotal,c:iCgst,sg:iSgst,ig:iIgst,taxable:iTaxable,count:fPur.length,label:'Purchases'},
+        ].map(x=>(
+          <div key={x.title} className="gst-card" style={{borderLeft:`4px solid ${x.color}`}}>
+            <div className="gst-ttl">{x.title}</div>
+            <div className="gst-amt" style={{color:x.color}}>{fc(x.total)}</div>
+            <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:5}}>
+              {[['CGST',x.c],['SGST',x.sg],['IGST',x.ig]].map(([l,v])=>(
+                <div key={l} style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{l}</span><span className="mono bold">{fc(v)}</span></div>
+              ))}
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:5,marginTop:2,display:'flex',justifyContent:'space-between'}}><span className="muted">Taxable</span><span className="mono">{fc(x.taxable)}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{x.label}</span><span className="bold">{x.count}</span></div>
+            </div>
           </div>
-        </div>
-        <div className="gst-card" style={{borderLeft:'4px solid var(--success)'}}>
-          <div className="gst-ttl">Input GST Credit (Purchases)</div>
-          <div className="gst-amt" style={{color:'var(--success)'}}>{fc(iTotal)}</div>
-          <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:5}}>
-            {[['CGST',fc(iCgst)],['SGST',fc(iSgst)],['IGST',fc(iIgst)]].map(([l,v])=>(
-              <div key={l} style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{l}</span><span className="mono bold">{v}</span></div>
-            ))}
-            <div style={{borderTop:'1px solid var(--border)',paddingTop:5,marginTop:2,display:'flex',justifyContent:'space-between'}}><span className="muted">Taxable Purchases</span><span className="mono">{fc(iTaxable)}</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">Purchase Count</span><span className="bold">{fPur.length}</span></div>
-          </div>
-        </div>
+        ))}
         <div className="gst-card" style={{borderLeft:'4px solid var(--primary)',background:net>0?'#FFF7ED':'#F0FDF4'}}>
           <div className="gst-ttl">Net GST Payable</div>
           <div className="gst-amt" style={{color:net>0?'var(--warning)':'var(--success)'}}>{fc(Math.abs(net))}</div>
-          <div style={{marginTop:8,fontSize:13,fontWeight:700,color:net>0?'var(--warning)':'var(--success)'}}>{net>0?'⬆ Payable to Government':'⬇ Credit Available (ITC)'}</div>
+          <div style={{marginTop:8,fontSize:13,fontWeight:700,color:net>0?'var(--warning)':'var(--success)'}}>{net>0?'⬆ Payable to Govt':'⬇ ITC Credit Available'}</div>
           <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:4}}>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">Output GST</span><span className="mono">{fc(oTotal)}</span></div>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">(−) Input Credit</span><span className="mono">({fc(iTotal)})</span></div>
+            {[['Output',fc(oTotal)],['(−) Input Credit',`(${fc(iTotal)})`]].map(([l,v])=>(
+              <div key={l} style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{l}</span><span className="mono">{v}</span></div>
+            ))}
             <div style={{borderTop:'1px solid var(--border)',paddingTop:4,marginTop:2,display:'flex',justifyContent:'space-between',fontWeight:700}}><span>Net</span><span className="mono">{fc(net)}</span></div>
           </div>
         </div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-        <div className="card">
-          <div className="card-header"><h3>Sales Detail</h3><span className="badge badge-danger">{fInv.length} invoices</span></div>
-          <div className="tbl-wrap">
-            {fInv.length===0?<div style={{padding:20,textAlign:'center',color:'var(--text2)',fontSize:13}}>No sales in this period</div>:(
-              <table style={{fontSize:12}}>
-                <thead><tr><th>Invoice</th><th>Customer</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Output Tax</th></tr></thead>
-                <tbody>{fInv.map(inv=>(
-                  <tr key={inv.id}><td className="mono">{inv.invoiceNo}</td><td>{inv.customerName}</td><td className="mono tr">{fc(inv.taxable)}</td><td className="mono bold tr" style={{color:'var(--danger)'}}>{fc(inv.totalTax)}</td></tr>
-                ))}</tbody>
-              </table>
-            )}
+        {[{title:'Sales Detail',data:fInv,key:'invoiceNo',nameKey:'customerName',taxKey:'totalTax',color:'var(--danger)',badge:'badge-danger',count:fInv.length},{title:'Purchase Detail',data:fPur,key:'purchaseNo',nameKey:'supplierName',taxKey:'totalTax',color:'var(--success)',badge:'badge-success',count:fPur.length}].map(x=>(
+          <div key={x.title} className="card">
+            <div className="card-header"><h3>{x.title}</h3><span className={`badge ${x.badge}`}>{x.count}</span></div>
+            <div className="tbl-wrap">
+              {x.data.length===0?<div style={{padding:20,textAlign:'center',color:'var(--text2)',fontSize:13}}>No data in this period</div>:(
+                <table style={{fontSize:12}}>
+                  <thead><tr><th>No.</th><th>Party</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Tax</th></tr></thead>
+                  <tbody>{x.data.map(d=>(
+                    <tr key={d.id}><td className="mono">{d[x.key]}</td><td>{d[x.nameKey]}</td><td className="mono tr">{fc(d.taxable)}</td><td className="mono bold tr" style={{color:x.color}}>{fc(d[x.taxKey])}</td></tr>
+                  ))}</tbody>
+                </table>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-header"><h3>Purchase Detail</h3><span className="badge badge-success">{fPur.length} entries</span></div>
-          <div className="tbl-wrap">
-            {fPur.length===0?<div style={{padding:20,textAlign:'center',color:'var(--text2)',fontSize:13}}>No purchases in this period</div>:(
-              <table style={{fontSize:12}}>
-                <thead><tr><th>Purchase</th><th>Supplier</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Input Tax</th></tr></thead>
-                <tbody>{fPur.map(p=>(
-                  <tr key={p.id}><td className="mono">{p.purchaseNo}</td><td>{p.supplierName}</td><td className="mono tr">{fc(p.taxable)}</td><td className="mono bold tr" style={{color:'var(--success)'}}>{fc(p.totalTax)}</td></tr>
-                ))}</tbody>
-              </table>
-            )}
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
 };
 
-// ─── CUSTOMER LEDGER ───────────────────────────────────────────────────────────
+// ─── CUSTOMER LEDGER ──────────────────────────────────────────────────────────
 const CustomerLedgerModule=({customers,invoices})=>{
   const [selId,setSelId]=useState(null);
+  const [search,setSearch]=useState('');
   const balances=customers.map(c=>{
     const invs=invoices.filter(i=>i.customerId===c.id);
     const total=invs.reduce((s,i)=>s+i.grandTotal,0);
     const paid=invs.filter(i=>i.paid).reduce((s,i)=>s+i.grandTotal,0);
-    return{...c,total,paid,balance:total-paid};
-  });
+    return{...c,total,paid,balance:total-paid,invoiceCount:invs.length};
+  }).filter(c=>c.name.toLowerCase().includes(search.toLowerCase()));
   const sel=customers.find(c=>c.id===selId);
   const selInvs=selId?[...invoices.filter(i=>i.customerId===selId)].sort((a,b)=>a.date.localeCompare(b.date)):[];
   let running=0;
-  const rows=selInvs.map(inv=>{running+=inv.grandTotal;const bal=running-(inv.paid?inv.grandTotal:0);return{...inv,runBal:bal>=0?bal:0}});
+  const rows=selInvs.map(inv=>{
+    running+=inv.grandTotal;
+    const cr=inv.paid?inv.grandTotal:0;
+    running-=cr;
+    return{...inv,runBal:running};
+  });
   const selBal=balances.find(c=>c.id===selId);
   return(
-    <div className="anim" style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16}}>
-      <div className="card" style={{alignSelf:'start'}}>
-        <div className="card-header"><h3>Customers ({customers.length})</h3></div>
-        {balances.map(c=>(
-          <div key={c.id} className={`party-item${selId===c.id?' sel':''}`} onClick={()=>setSelId(c.id)}>
-            <div className="bold sm">{c.name}</div>
-            <div style={{fontSize:11,color:'var(--text2)',marginTop:1}}>{c.state}</div>
-            <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12}}>
-              <span className="muted">Balance:</span>
-              <span className="mono bold" style={{color:c.balance>0?'var(--danger)':'var(--success)'}}>{fc(c.balance)}</span>
+    <div className="anim" style={{display:'grid',gridTemplateColumns:'300px 1fr',gap:16}}>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <input className="form-control" placeholder="🔍 Search customers..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div className="card" style={{overflow:'hidden'}}>
+          {balances.length===0?<div style={{padding:24,textAlign:'center',color:'var(--text2)',fontSize:13}}>No customers found</div>:
+          balances.map(c=>(
+            <div key={c.id} className={`party-item${selId===c.id?' sel':''}`} onClick={()=>setSelId(c.id)}>
+              <div className="bold sm">{c.name}</div>
+              <div style={{fontSize:11,color:'var(--text2)',marginTop:1}}>{c.state} · {c.invoiceCount} invoice{c.invoiceCount!==1?'s':''}</div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:12}}>
+                <span className="muted">Outstanding:</span>
+                <span className="mono bold" style={{color:c.balance>0?'var(--danger)':'var(--success)'}}>{fc(c.balance)}</span>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
       <div className="card">
-        {!sel?(
-          <div className="empty"><div className="ei">👈</div><h3>Select a Customer</h3><p>Click on a customer to view their ledger</p></div>
-        ):(
+        {!sel?<div className="empty"><div className="ei">👈</div><h3>Select a Customer</h3><p>Click a customer to view their ledger</p></div>:(
           <>
             <div className="card-header">
-              <div><h3>{sel.name}</h3><div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>GSTIN: {sel.gstin} | {sel.phone}</div></div>
+              <div><h3>{sel.name}</h3><div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>GSTIN: {sel.gstin||'N/A'} | {sel.phone||''}</div></div>
               <div style={{textAlign:'right'}}>
-                <div style={{fontSize:11,color:'var(--text2)'}}>Outstanding</div>
+                <div style={{fontSize:11,color:'var(--text2)'}}>Outstanding Balance</div>
                 <div style={{fontSize:18,fontWeight:800,color:'var(--danger)',fontFamily:'JetBrains Mono'}}>{fc(selBal?.balance||0)}</div>
               </div>
             </div>
-            <div style={{padding:'12px 16px',background:'#F9FAFB',borderBottom:'1px solid var(--border)',display:'flex',gap:24}}>
+            <div style={{padding:'12px 16px',background:'#F9FAFB',borderBottom:'1px solid var(--border)',display:'flex',gap:24,flexWrap:'wrap'}}>
               {[['Total Invoiced',selBal?.total,'var(--text)'],['Total Paid',selBal?.paid,'var(--success)'],['Balance Due',selBal?.balance,'var(--danger)']].map(([l,v,c])=>(
-                <div key={l}><div style={{fontSize:11,color:'var(--text2)'}}>{l}</div><div style={{fontFamily:'JetBrains Mono',fontWeight:700,color:c}}>{fc(v||0)}</div></div>
+                <div key={l}><div style={{fontSize:11,color:'var(--text2)'}}>{l}</div><div style={{fontFamily:'JetBrains Mono',fontWeight:700,color:c,fontSize:14}}>{fc(v||0)}</div></div>
               ))}
             </div>
             <div className="tbl-wrap">
               <table>
-                <thead><tr><th>Date</th><th>Invoice No</th><th>Particulars</th><th style={{textAlign:'right'}}>Debit (Dr)</th><th style={{textAlign:'right'}}>Credit (Cr)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
+                <thead><tr><th>Date</th><th>Invoice No</th><th>Description</th><th style={{textAlign:'right'}}>Debit (Dr)</th><th style={{textAlign:'right'}}>Credit (Cr)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
                 <tbody>
-                  {rows.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:24,color:'var(--text2)'}}>No transactions</td></tr>:
+                  {rows.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:24,color:'var(--text2)'}}>No transactions found</td></tr>:
                   rows.map((row,i)=>(
                     <tr key={i}>
                       <td style={{fontSize:12}}>{fd(row.date)}</td>
                       <td className="mono">{row.invoiceNo}</td>
-                      <td><div style={{fontSize:13}}>Sales Invoice</div><div style={{fontSize:11,color:'var(--text2)'}}>{row.items.length} item(s) | GST: {fc(row.totalTax)}</div></td>
+                      <td><div style={{fontSize:13}}>Sales Invoice</div><div style={{fontSize:11,color:'var(--text2)'}}>{row.items?.length||0} item(s) | GST: {fc(row.totalTax)}</div></td>
                       <td className="mono bold tr">{fc(row.grandTotal)}</td>
                       <td className="mono tr" style={{color:'var(--success)'}}>{row.paid?fc(row.grandTotal):'—'}</td>
                       <td className="mono bold tr" style={{color:row.runBal>0?'var(--danger)':'var(--success)'}}>{fc(row.runBal)}</td>
@@ -937,57 +1244,59 @@ const CustomerLedgerModule=({customers,invoices})=>{
   );
 };
 
-// ─── SUPPLIER LEDGER ───────────────────────────────────────────────────────────
+// ─── SUPPLIER LEDGER ──────────────────────────────────────────────────────────
 const SupplierLedgerModule=({suppliers,purchases})=>{
   const [selId,setSelId]=useState(null);
+  const [search,setSearch]=useState('');
   const balances=suppliers.map(s=>{
     const purs=purchases.filter(p=>p.supplierId===s.id);
     const total=purs.reduce((sum,p)=>sum+p.grandTotal,0);
     const paid=purs.filter(p=>p.paid).reduce((sum,p)=>sum+p.grandTotal,0);
-    return{...s,total,paid,balance:total-paid};
-  });
+    return{...s,total,paid,balance:total-paid,purchaseCount:purs.length};
+  }).filter(s=>s.name.toLowerCase().includes(search.toLowerCase()));
   const sel=suppliers.find(s=>s.id===selId);
   const selPurs=selId?[...purchases.filter(p=>p.supplierId===selId)].sort((a,b)=>a.date.localeCompare(b.date)):[];
   let running=0;
-  const rows=selPurs.map(p=>{running+=p.grandTotal;const bal=running-(p.paid?p.grandTotal:0);return{...p,runBal:bal>=0?bal:0}});
+  const rows=selPurs.map(p=>{running+=p.grandTotal;const cr=p.paid?p.grandTotal:0;running-=cr;return{...p,runBal:running}});
   const selBal=balances.find(s=>s.id===selId);
   return(
-    <div className="anim" style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16}}>
-      <div className="card" style={{alignSelf:'start'}}>
-        <div className="card-header"><h3>Suppliers ({suppliers.length})</h3></div>
-        {balances.map(s=>(
-          <div key={s.id} className={`party-item${selId===s.id?' sel':''}`} style={{background:selId===s.id?'#F0FDF4':undefined}} onClick={()=>setSelId(s.id)}>
-            <div className="bold sm">{s.name}</div>
-            <div style={{fontSize:11,color:'var(--text2)',marginTop:1}}>{s.state}</div>
-            <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12}}>
-              <span className="muted">Payable:</span>
-              <span className="mono bold" style={{color:s.balance>0?'var(--warning)':'var(--success)'}}>{fc(s.balance)}</span>
+    <div className="anim" style={{display:'grid',gridTemplateColumns:'300px 1fr',gap:16}}>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <input className="form-control" placeholder="🔍 Search suppliers..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div className="card" style={{overflow:'hidden'}}>
+          {balances.length===0?<div style={{padding:24,textAlign:'center',color:'var(--text2)',fontSize:13}}>No suppliers found</div>:
+          balances.map(s=>(
+            <div key={s.id} className={`party-item${selId===s.id?' sel':''}`} onClick={()=>setSelId(s.id)}>
+              <div className="bold sm">{s.name}</div>
+              <div style={{fontSize:11,color:'var(--text2)',marginTop:1}}>{s.state} · {s.purchaseCount} purchase{s.purchaseCount!==1?'s':''}</div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:12}}>
+                <span className="muted">Payable:</span>
+                <span className="mono bold" style={{color:s.balance>0?'var(--warning)':'var(--success)'}}>{fc(s.balance)}</span>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
       <div className="card">
-        {!sel?(
-          <div className="empty"><div className="ei">👈</div><h3>Select a Supplier</h3><p>Click on a supplier to view their ledger</p></div>
-        ):(
+        {!sel?<div className="empty"><div className="ei">👈</div><h3>Select a Supplier</h3><p>Click a supplier to view their ledger</p></div>:(
           <>
             <div className="card-header">
-              <div><h3>{sel.name}</h3><div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>GSTIN: {sel.gstin} | {sel.phone}</div></div>
+              <div><h3>{sel.name}</h3><div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>GSTIN: {sel.gstin||'N/A'} | {sel.phone||''}</div></div>
               <div style={{textAlign:'right'}}>
                 <div style={{fontSize:11,color:'var(--text2)'}}>Outstanding Payable</div>
                 <div style={{fontSize:18,fontWeight:800,color:'var(--warning)',fontFamily:'JetBrains Mono'}}>{fc(selBal?.balance||0)}</div>
               </div>
             </div>
-            <div style={{padding:'12px 16px',background:'#F9FAFB',borderBottom:'1px solid var(--border)',display:'flex',gap:24}}>
+            <div style={{padding:'12px 16px',background:'#F9FAFB',borderBottom:'1px solid var(--border)',display:'flex',gap:24,flexWrap:'wrap'}}>
               {[['Total Purchased',selBal?.total,'var(--text)'],['Total Paid',selBal?.paid,'var(--success)'],['Balance Payable',selBal?.balance,'var(--warning)']].map(([l,v,c])=>(
-                <div key={l}><div style={{fontSize:11,color:'var(--text2)'}}>{l}</div><div style={{fontFamily:'JetBrains Mono',fontWeight:700,color:c}}>{fc(v||0)}</div></div>
+                <div key={l}><div style={{fontSize:11,color:'var(--text2)'}}>{l}</div><div style={{fontFamily:'JetBrains Mono',fontWeight:700,color:c,fontSize:14}}>{fc(v||0)}</div></div>
               ))}
             </div>
             <div className="tbl-wrap">
               <table>
-                <thead><tr><th>Date</th><th>Purchase No</th><th>Particulars</th><th style={{textAlign:'right'}}>Credit (Cr)</th><th style={{textAlign:'right'}}>Debit (Dr)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
+                <thead><tr><th>Date</th><th>Purchase No</th><th>Description</th><th style={{textAlign:'right'}}>Amount (Cr)</th><th style={{textAlign:'right'}}>Paid (Dr)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
                 <tbody>
-                  {rows.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:24,color:'var(--text2)'}}>No transactions</td></tr>:
+                  {rows.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:24,color:'var(--text2)'}}>No transactions found</td></tr>:
                   rows.map((row,i)=>(
                     <tr key={i}>
                       <td style={{fontSize:12}}>{fd(row.date)}</td>
@@ -1008,36 +1317,138 @@ const SupplierLedgerModule=({suppliers,purchases})=>{
   );
 };
 
-// ─── APP ROOT ──────────────────────────────────────────────────────────────────
-const TITLES={dashboard:'Dashboard',billing:'Sales Invoice',purchase:'Purchase Entry',inventory:'Inventory Management',gst:'GST Summary Report',customers:'Customer Ledger',suppliers:'Supplier Ledger'};
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+const Dashboard=({invoices,purchases,products,setModule})=>{
+  const mr=getRange('month');
+  const mInv=invoices.filter(i=>inRange(i.date,mr.start,mr.end));
+  const sales=mInv.reduce((s,i)=>s+i.grandTotal,0);
+  const tax=mInv.reduce((s,i)=>s+i.totalTax,0);
+  const pending=invoices.filter(i=>!i.paid).reduce((s,i)=>s+i.grandTotal,0);
+  const low=products.filter(p=>p.stock<=p.minStock).length;
+  const recent=[...invoices].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
+  return(
+    <div className="anim">
+      <div className="stats-grid">
+        <div className="stat-card"><div className="stat-label">This Month Sales</div><div className="stat-value" style={{color:'var(--success)'}}>{fc(sales)}</div><div className="stat-sub">{mInv.length} invoices</div></div>
+        <div className="stat-card"><div className="stat-label">Output GST (Month)</div><div className="stat-value" style={{color:'var(--primary)'}}>{fc(tax)}</div><div className="stat-sub">GST liability</div></div>
+        <div className="stat-card"><div className="stat-label">Pending Receivables</div><div className="stat-value" style={{color:'var(--warning)'}}>{fc(pending)}</div><div className="stat-sub">{invoices.filter(i=>!i.paid).length} unpaid invoices</div></div>
+        <div className="stat-card"><div className="stat-label">Low Stock Alerts</div><div className="stat-value" style={{color:low>0?'var(--danger)':'var(--success)'}}>{low}</div><div className="stat-sub">products below minimum</div></div>
+      </div>
+      {low>0&&<div className="alert alert-warn mb4">⚠️ <strong>{low} product{low>1?'s':''}</strong> below min stock. <span style={{cursor:'pointer',textDecoration:'underline'}} onClick={()=>setModule('inventory')}>View Inventory →</span></div>}
+      <div className="card">
+        <div className="card-header"><h3>Recent Invoices</h3><button className="btn btn-outline btn-sm" onClick={()=>setModule('billing')}>View All</button></div>
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Invoice No</th><th>Date</th><th>Customer</th><th>Tax Type</th><th style={{textAlign:'right'}}>GST</th><th style={{textAlign:'right'}}>Total</th><th>Status</th></tr></thead>
+            <tbody>{recent.map(inv=>(
+              <tr key={inv.id}>
+                <td className="mono bold">{inv.invoiceNo}</td><td>{fd(inv.date)}</td>
+                <td><div className="bold">{inv.customerName}</div><div className="sm muted">{inv.customerState}</div></td>
+                <td><span className={`badge ${inv.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{inv.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
+                <td className="mono tr">{fc(inv.totalTax)}</td>
+                <td className="mono bold tr">{fc(inv.grandTotal)}</td>
+                <td><span className={`badge ${inv.paid?'badge-success':'badge-warning'}`}>{inv.paid?'✓ Paid':'Pending'}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── SETTINGS MODULE ──────────────────────────────────────────────────────────
+const SettingsModule=({co,setCo})=>{
+  const [f,setF]=useState({...co});
+  const [saved,setSaved]=useState(false);
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const handleState=e=>{const st=STATES.find(x=>x.name===e.target.value);if(st)setF(p=>({...p,state:st.name,stateCode:st.code}));};
+  const save=()=>{setCo(f);setSaved(true);setTimeout(()=>setSaved(false),3000);};
+  const reset=()=>{if(window.confirm('Reset all data to factory defaults? ALL invoices, customers, suppliers and products will be deleted!')){{localStorage.clear();window.location.reload();}}};
+  return(
+    <div className="anim" style={{maxWidth:700}}>
+      {saved&&<div className="alert alert-ok mb4">✅ Company details saved successfully!</div>}
+      <div className="card mb4">
+        <div className="card-header"><h3>🏢 Company Details</h3></div>
+        <div className="card-body">
+          <div className="g2">
+            <FI label="Company Name *" value={f.name} onChange={e=>s('name',e.target.value)} placeholder="Your Business Name"/>
+            <FI label="GSTIN *" value={f.gstin} onChange={e=>s('gstin',e.target.value.toUpperCase())} placeholder="27AABCS1429B1ZB"/>
+          </div>
+          <div className="g2">
+            <FI label="PAN" value={f.pan} onChange={e=>s('pan',e.target.value.toUpperCase())} placeholder="AABCS1429B"/>
+            <FG label="State *">
+              <select className="form-control" value={f.state} onChange={handleState}>
+                {STATES.map(st=><option key={st.code} value={st.name}>{st.name} ({st.code})</option>)}
+              </select>
+            </FG>
+          </div>
+          <FI label="Full Address" value={f.address} onChange={e=>s('address',e.target.value)} placeholder="Building, Street, City, PIN, State"/>
+          <div className="g2">
+            <FI label="Phone" value={f.phone} onChange={e=>s('phone',e.target.value)} placeholder="+91 98765 43210"/>
+            <FI label="Email" value={f.email} onChange={e=>s('email',e.target.value)} placeholder="info@yourbusiness.com"/>
+          </div>
+          <FI label="Bank Details (for invoice footer)" value={f.bank} onChange={e=>s('bank',e.target.value)} placeholder="Bank Name | A/c Number | IFSC Code"/>
+          <div style={{marginTop:16}}>
+            <button className="btn btn-primary" onClick={save}>💾 Save Company Details</button>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header"><h3>⚠️ Danger Zone</h3></div>
+        <div className="card-body">
+          <p style={{fontSize:13,color:'var(--text2)',marginBottom:12}}>This will delete ALL data including invoices, purchases, customers, suppliers, and products. This action cannot be undone.</p>
+          <button className="btn btn-danger" onClick={reset}>🗑 Reset All Data to Default</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+const TITLES={dashboard:'Dashboard',billing:'Sales Invoice',purchase:'Purchase Entry',inventory:'Inventory',gst:'GST Summary',customers:'Customers',suppliers:'Suppliers',custledger:'Customer Ledger',suppledger:'Supplier Ledger',settings:'Settings'};
 
 const App=()=>{
   const [mod,setMod]=useState('dashboard');
-  const [customers]=useState(IC);
-  const [suppliers]=useState(IS);
-  const [products,setProducts]=useState(IP);
-  const [invoices,setInvoices]=useState(II);
-  const [purchases,setPurchases]=useState(IPU);
+  const [co,setCo]=useState(()=>LS.get('bizgst_co',DEF_CO));
+  const [customers,setCustomers]=useState(()=>LS.get('bizgst_customers',DEF_CUSTOMERS));
+  const [suppliers,setSuppliers]=useState(()=>LS.get('bizgst_suppliers',DEF_SUPPLIERS));
+  const [products,setProducts]=useState(()=>LS.get('bizgst_products',DEF_PRODUCTS));
+  const [invoices,setInvoices]=useState(()=>LS.get('bizgst_invoices',DEF_INVOICES));
+  const [purchases,setPurchases]=useState(()=>LS.get('bizgst_purchases',DEF_PURCHASES));
+
+  // Persist to localStorage on every change
+  useEffect(()=>LS.set('bizgst_co',co),[co]);
+  useEffect(()=>LS.set('bizgst_customers',customers),[customers]);
+  useEffect(()=>LS.set('bizgst_suppliers',suppliers),[suppliers]);
+  useEffect(()=>LS.set('bizgst_products',products),[products]);
+  useEffect(()=>LS.set('bizgst_invoices',invoices),[invoices]);
+  useEffect(()=>LS.set('bizgst_purchases',purchases),[purchases]);
+
   return(
     <><OTABanner/>
     <div className="app">
-      <Sidebar active={mod} set={setMod}/>
+      <Sidebar active={mod} set={setMod} co={co}/>
       <div className="main">
         <div className="topbar">
           <h2>{TITLES[mod]}</h2>
           <div className="row gap3">
-            <span style={{fontSize:12,color:'var(--text2)'}}>GSTIN: <span className="mono bold">{CO.gstin}</span></span>
-            <span style={{fontSize:12,fontWeight:600,color:'var(--text2)'}}>{CO.name}</span>
+            <span style={{fontSize:12,color:'var(--text2)'}}>GSTIN: <span className="mono bold">{co.gstin}</span></span>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--text2)'}}>{co.name}</span>
+            <button className="btn btn-outline btn-sm" onClick={()=>setMod('settings')}>⚙ Settings</button>
           </div>
         </div>
         <div className="content">
           {mod==='dashboard'&&<Dashboard invoices={invoices} purchases={purchases} products={products} setModule={setMod}/>}
-          {mod==='billing'&&<BillingModule invoices={invoices} setInvoices={setInvoices} customers={customers} products={products} setProducts={setProducts}/>}
-          {mod==='purchase'&&<PurchaseModule purchases={purchases} setPurchases={setPurchases} suppliers={suppliers} products={products} setProducts={setProducts}/>}
+          {mod==='billing'&&<BillingModule invoices={invoices} setInvoices={setInvoices} customers={customers} products={products} setProducts={setProducts} co={co}/>}
+          {mod==='purchase'&&<PurchaseModule purchases={purchases} setPurchases={setPurchases} suppliers={suppliers} products={products} setProducts={setProducts} co={co}/>}
           {mod==='inventory'&&<InventoryModule products={products} setProducts={setProducts}/>}
           {mod==='gst'&&<GSTSummaryModule invoices={invoices} purchases={purchases}/>}
-          {mod==='customers'&&<CustomerLedgerModule customers={customers} invoices={invoices}/>}
-          {mod==='suppliers'&&<SupplierLedgerModule suppliers={suppliers} purchases={purchases}/>}
+          {mod==='customers'&&<CustomersModule customers={customers} setCustomers={setCustomers} invoices={invoices}/>}
+          {mod==='suppliers'&&<SuppliersModule suppliers={suppliers} setSuppliers={setSuppliers} purchases={purchases}/>}
+          {mod==='custledger'&&<CustomerLedgerModule customers={customers} invoices={invoices}/>}
+          {mod==='suppledger'&&<SupplierLedgerModule suppliers={suppliers} purchases={purchases}/>}
+          {mod==='settings'&&<SettingsModule co={co} setCo={setCo}/>}
         </div>
       </div>
     </div></>
