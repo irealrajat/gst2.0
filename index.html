@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BizGST Pro — GST Billing & Accounting Software</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg:#EEF2F7;--sidebar:#111827;--sidebar-text:#9CA3AF;--sidebar-hover:#1F2937;
+      --primary:#1D4ED8;--primary-light:#DBEAFE;--card:#FFFFFF;
+      --success:#059669;--success-light:#D1FAE5;--warning:#D97706;--warning-light:#FEF3C7;
+      --danger:#DC2626;--danger-light:#FEE2E2;
+      --text:#111827;--text2:#6B7280;--border:#E5E7EB;--input:#F9FAFB;
+    }
+    body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+    .app{display:flex;min-height:100vh}
+
+    /* SIDEBAR */
+    .sidebar{width:240px;background:var(--sidebar);min-height:100vh;position:fixed;left:0;top:0;bottom:0;display:flex;flex-direction:column;z-index:100}
+    .sb-logo{padding:20px 16px;border-bottom:1px solid #1F2937}
+    .sb-logo h1{font-size:20px;font-weight:800;color:#fff;letter-spacing:-.5px}
+    .sb-logo h1 span{color:var(--primary)}
+    .sb-logo p{font-size:11px;color:#6B7280;margin-top:2px}
+    .sb-nav{flex:1;padding:12px 8px;overflow-y:auto}
+    .sb-section{font-size:10px;font-weight:700;color:#4B5563;letter-spacing:1px;text-transform:uppercase;padding:12px 8px 6px}
+    .nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--sidebar-text);font-size:13.5px;font-weight:500;transition:all .15s;margin-bottom:2px}
+    .nav-item:hover{background:var(--sidebar-hover);color:#fff}
+    .nav-item.active{background:var(--primary);color:#fff}
+    .nav-item .ni{width:18px;text-align:center;font-size:15px}
+
+    /* MAIN */
+    .main{margin-left:240px;flex:1;min-height:100vh}
+    .topbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:90}
+    .topbar h2{font-size:17px;font-weight:700}
+    .content{padding:24px}
+
+    /* BUTTONS */
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:inherit;white-space:nowrap}
+    .btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:#1e40af}
+    .btn-success{background:var(--success);color:#fff}.btn-success:hover{background:#047857}
+    .btn-warning{background:var(--warning);color:#fff}
+    .btn-danger{background:var(--danger);color:#fff}
+    .btn-outline{background:#fff;color:var(--text);border:1px solid var(--border)}.btn-outline:hover{background:var(--bg)}
+    .btn-sm{padding:5px 10px;font-size:12px}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+
+    /* CARDS */
+    .card{background:var(--card);border-radius:12px;border:1px solid var(--border);overflow:hidden}
+    .card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .card-header h3{font-size:14px;font-weight:700}
+    .card-body{padding:20px}
+
+    /* STATS GRID */
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+    .stat-card{background:var(--card);border-radius:12px;padding:18px 20px;border:1px solid var(--border)}
+    .stat-label{font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px}
+    .stat-value{font-size:22px;font-weight:800;letter-spacing:-.5px}
+    .stat-sub{font-size:12px;color:var(--text2);margin-top:4px}
+
+    /* TABLE */
+    .tbl-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse}
+    th{background:#F9FAFB;padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+    td{padding:11px 14px;font-size:13px;border-bottom:1px solid #F3F4F6;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:#F9FAFB}
+
+    /* BADGES */
+    .badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .badge-success{background:var(--success-light);color:var(--success)}
+    .badge-warning{background:var(--warning-light);color:var(--warning)}
+    .badge-danger{background:var(--danger-light);color:var(--danger)}
+    .badge-primary{background:var(--primary-light);color:var(--primary)}
+
+    /* FORMS */
+    .form-group{margin-bottom:14px}
+    .form-label{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+    .form-control{width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--input);color:var(--text);transition:border-color .15s;outline:none}
+    .form-control:focus{border-color:var(--primary);background:#fff}
+    .form-control:disabled{background:#F3F4F6;color:var(--text2)}
+    select.form-control{cursor:pointer}
+
+    /* LAYOUT */
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+    .row{display:flex;align-items:center}
+    .between{justify-content:space-between}
+    .gap2{gap:8px}
+    .gap3{gap:12px}
+    .mb3{margin-bottom:12px}
+    .mb4{margin-bottom:16px}
+    .mb5{margin-bottom:20px}
+    .mb6{margin-bottom:24px}
+    .tr{text-align:right}
+    .tc{text-align:center}
+    .mono{font-family:'JetBrains Mono',monospace;font-size:12px}
+    .sm{font-size:12px}
+    .muted{color:var(--text2)}
+    .bold{font-weight:700}
+
+    /* MODAL */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
+    .modal{background:#fff;border-radius:16px;width:100%;max-width:860px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .modal-sm{max-width:500px}.modal-lg{max-width:1100px}
+    .modal-hd{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .modal-hd h3{font-size:15px;font-weight:700}
+    .modal-bd{padding:24px}
+    .modal-ft{padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+    .close-btn{background:none;border:none;cursor:pointer;font-size:20px;color:var(--text2);line-height:1;padding:2px}
+
+    /* ITEM ROW */
+    .item-grid{display:grid;grid-template-columns:2.5fr 1fr 1fr 1fr 1fr 38px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #F3F4F6}
+    .item-hdr{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;padding:7px 0 5px;border-bottom:1px solid var(--border)}
+
+    /* SUMMARY BOX */
+    .sum-box{background:#F9FAFB;border-radius:10px;padding:16px;border:1px solid var(--border)}
+    .sum-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px}
+    .sum-total{border-top:1.5px solid var(--border);margin-top:6px;padding-top:9px;font-size:15px;font-weight:700}
+    .sum-lbl{color:var(--text2)}
+    .sum-amt{font-family:'JetBrains Mono',monospace;font-weight:600}
+
+    /* FILTER */
+    .filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+    .filter-btn{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid var(--border);background:#fff;color:var(--text2);transition:all .15s;font-family:inherit}
+    .filter-btn:hover,.filter-btn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+    /* TABS */
+    .tabs{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:20px}
+    .tab{padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+    .tab:hover{color:var(--text)}
+    .tab.on{color:var(--primary);border-color:var(--primary)}
+
+    /* ALERT */
+    .alert{padding:11px 15px;border-radius:8px;font-size:13px;font-weight:500;margin-bottom:16px}
+    .alert-info{background:var(--primary-light);color:#1e40af;border:1px solid #BFDBFE}
+    .alert-warn{background:var(--warning-light);color:#92400E;border:1px solid #FCD34D}
+    .alert-danger{background:var(--danger-light);color:#991B1B;border:1px solid #FCA5A5}
+    .alert-ok{background:var(--success-light);color:#065F46;border:1px solid #6EE7B7}
+
+    /* EMPTY */
+    .empty{text-align:center;padding:48px 24px;color:var(--text2)}
+    .empty .ei{font-size:48px;margin-bottom:12px}
+    .empty h3{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+    .empty p{font-size:13px}
+
+    /* GST CARD */
+    .gst-card{background:var(--card);border-radius:12px;padding:20px;border:1px solid var(--border)}
+    .gst-ttl{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+    .gst-amt{font-size:26px;font-weight:800;letter-spacing:-1px}
+
+    /* LEDGER */
+    .party-item{padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+    .party-item:hover{background:#F9FAFB}
+    .party-item.sel{background:var(--primary-light)}
+
+    /* PRINT INVOICE */
+    .pi{padding:32px;font-family:'Plus Jakarta Sans',sans-serif}
+    .pi-hd{display:flex;justify-content:space-between;margin-bottom:24px}
+    .pi-co{font-size:22px;font-weight:800;color:var(--primary)}
+    .pi-info{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+    .pi-box{background:#F9FAFB;padding:12px 14px;border-radius:8px}
+    .pi-box h4{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:5px;font-weight:700}
+    .pi-box p{font-size:12.5px;line-height:1.6}
+    .pi-table th{background:var(--primary);color:#fff}
+    .pi-totals{max-width:320px;margin-left:auto;margin-top:0}
+    .stock-low{color:var(--danger);font-weight:700}
+    .stock-ok{color:var(--success);font-weight:600}
+
+    input[type=number]{-moz-appearance:textfield}
+    input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    .anim{animation:fadeUp .2s ease}
+
+    /* ── OTA UPDATE BANNER ── */
+    .ota-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(135deg,#1D4ED8 0%,#7C3AED 100%);color:#fff;padding:11px 24px;display:flex;align-items:center;justify-content:space-between;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;box-shadow:0 4px 24px rgba(0,0,0,.35);animation:otaSlide .4s cubic-bezier(.22,1,.36,1)}
+    @keyframes otaSlide{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
+    .ota-left{display:flex;align-items:center;gap:10px;font-weight:500}
+    .ota-dot{width:9px;height:9px;border-radius:50%;background:#34D399;flex-shrink:0;animation:otaPulse 1.4s ease-in-out infinite}
+    @keyframes otaPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
+    .ota-actions{display:flex;gap:8px;align-items:center}
+    .ota-update-btn{background:#fff;color:#1D4ED8;border:none;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;letter-spacing:.2px}
+    .ota-update-btn:hover{background:#DBEAFE;transform:scale(1.03)}
+    .ota-skip-btn{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s}
+    .ota-skip-btn:hover{background:rgba(255,255,255,.28)}
+    .ota-ver{font-size:10px;opacity:.6;font-family:'JetBrains Mono',monospace;margin-left:4px}
+
+    @media print{
+      .sidebar,.topbar,.no-print{display:none!important}
+      .main{margin-left:0!important}
+      .overlay{position:static;background:none;padding:0}
+      .modal{box-shadow:none;border-radius:0;max-width:100%}
+      .modal-hd,.modal-ft{display:none}
+      body{background:#fff}
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef } = React;
+
+// 250025002500 OTA UPDATE CHECKER 25002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500250025002500
+const CHECK_MS = 60 * 1000;
+const OTABanner = () => {
+  const [update, setUpdate] = useState(null);
+  const [dismissed, setDismissed] = useState(false);
+  const current = useRef(null);
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch(`version.json?t=${Date.now()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!current.current) { current.current = data.version; }
+        else if (data.version !== current.current) { setUpdate(data); setDismissed(false); }
+      } catch {}
+    };
+    check();
+    const t = setInterval(check, CHECK_MS);
+    return () => clearInterval(t);
+  }, []);
+  if (!update || dismissed) return null;
+  const bt = update.builtAt ? new Date(update.builtAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+  return (
+    <div className="ota-banner">
+      <div className="ota-left"><div className="ota-dot"/><span>🚀 <strong>New Update Available!</strong> — Push deploy ho gaya. Reload karo latest version ke liye.</span>{bt && <span className="ota-ver">Built: {bt}</span>}<span className="ota-ver">v{update.version?.slice(0,7)}</span></div>
+      <div className="ota-actions"><button className="ota-update-btn" onClick={()=>window.location.reload(true)}>⬇ Update Now</button><button className="ota-skip-btn" onClick={()=>setDismissed(true)}>Later</button></div>
+    </div>
+  );
+};
+
+// ─── COMPANY INFO ──────────────────────────────────────────────────────────────
+const CO = {
+  name:'Sharma Traders',gstin:'27AABCS1429B1ZB',
+  address:'42, Shivaji Nagar, Pune - 411005, Maharashtra',
+  state:'Maharashtra',stateCode:'27',
+  phone:'+91 98765 43210',email:'info@sharmatraders.com',
+  pan:'AABCS1429B',bank:'HDFC Bank | A/c 50100234567890 | IFSC: HDFC0001234'
+};
+
+const GST_RATES=[0,5,12,18,28];
+
+// ─── INITIAL DATA ──────────────────────────────────────────────────────────────
+const IC=[
+  {id:'C001',name:'Ravi Electronics',gstin:'27AAACR1234B1Z1',address:'FC Road, Pune - 411004',state:'Maharashtra',stateCode:'27',phone:'98765 11111'},
+  {id:'C002',name:'Delhi Digital Store',gstin:'07AAADM5678C1Z2',address:'Lajpat Nagar, New Delhi - 110024',state:'Delhi',stateCode:'07',phone:'98765 22222'},
+  {id:'C003',name:'Mumbai Mart',gstin:'27AAABM9012D1Z3',address:'Dadar West, Mumbai - 400028',state:'Maharashtra',stateCode:'27',phone:'98765 33333'},
+  {id:'C004',name:'Chennai Tech Hub',gstin:'33AAACC3456E1Z4',address:'T Nagar, Chennai - 600017',state:'Tamil Nadu',stateCode:'33',phone:'98765 44444'},
+];
+const IS=[
+  {id:'S001',name:'Tech Wholesale Delhi',gstin:'07AAATW7890F1Z5',address:'Chandni Chowk, Delhi - 110006',state:'Delhi',stateCode:'07',phone:'98765 55555'},
+  {id:'S002',name:'Electronics Hub Mumbai',gstin:'27AAAEH2345G1Z6',address:'Dharavi, Mumbai - 400017',state:'Maharashtra',stateCode:'27',phone:'98765 66666'},
+];
+const IP=[
+  {id:'P001',name:'Samsung Mobile A54',hsn:'85171210',unit:'PCS',salePrice:28999,purchasePrice:25000,gstRate:18,stock:15,minStock:5},
+  {id:'P002',name:'HP Laptop 15s',hsn:'84713020',unit:'PCS',salePrice:52999,purchasePrice:46000,gstRate:18,stock:8,minStock:3},
+  {id:'P003',name:'SanDisk Pen Drive 64GB',hsn:'85235100',unit:'PCS',salePrice:599,purchasePrice:380,gstRate:18,stock:50,minStock:10},
+  {id:'P004',name:'Classmate Notebook (Pack 6)',hsn:'48201000',unit:'PACK',salePrice:120,purchasePrice:80,gstRate:12,stock:3,minStock:20},
+  {id:'P005',name:'Logitech Mouse M235',hsn:'84716060',unit:'PCS',salePrice:799,purchasePrice:550,gstRate:18,stock:25,minStock:5},
+];
+const II=[
+  {id:'INV001',invoiceNo:'INV-2024-001',date:'2024-02-10',customerId:'C001',customerName:'Ravi Electronics',customerGstin:'27AAACR1234B1Z1',customerAddress:'FC Road, Pune - 411004',customerState:'Maharashtra',customerStateCode:'27',taxType:'cgst_sgst',items:[{productId:'P001',name:'Samsung Mobile A54',hsn:'85171210',qty:2,rate:28999,gstRate:18,taxable:57998,cgst:5219.82,sgst:5219.82,igst:0,total:68437.64},{productId:'P003',name:'SanDisk Pen Drive 64GB',hsn:'85235100',qty:5,rate:599,gstRate:18,taxable:2995,cgst:269.55,sgst:269.55,igst:0,total:3534.1}],subtotal:60993,taxable:60993,cgst:5489.37,sgst:5489.37,igst:0,totalTax:10978.74,roundOff:0.26,grandTotal:71972,paid:true},
+  {id:'INV002',invoiceNo:'INV-2024-002',date:'2024-02-14',customerId:'C002',customerName:'Delhi Digital Store',customerGstin:'07AAADM5678C1Z2',customerAddress:'Lajpat Nagar, New Delhi - 110024',customerState:'Delhi',customerStateCode:'07',taxType:'igst',items:[{productId:'P002',name:'HP Laptop 15s',hsn:'84713020',qty:1,rate:52999,gstRate:18,taxable:52999,cgst:0,sgst:0,igst:9539.82,total:62538.82}],subtotal:52999,taxable:52999,cgst:0,sgst:0,igst:9539.82,totalTax:9539.82,roundOff:0.18,grandTotal:62539,paid:false},
+  {id:'INV003',invoiceNo:'INV-2024-003',date:'2024-03-02',customerId:'C003',customerName:'Mumbai Mart',customerGstin:'27AAABM9012D1Z3',customerAddress:'Dadar West, Mumbai - 400028',customerState:'Maharashtra',customerStateCode:'27',taxType:'cgst_sgst',items:[{productId:'P005',name:'Logitech Mouse M235',hsn:'84716060',qty:10,rate:799,gstRate:18,taxable:7990,cgst:719.1,sgst:719.1,igst:0,total:9428.2},{productId:'P004',name:'Classmate Notebook (Pack 6)',hsn:'48201000',qty:5,rate:120,gstRate:12,taxable:600,cgst:36,sgst:36,igst:0,total:672}],subtotal:8590,taxable:8590,cgst:755.1,sgst:755.1,igst:0,totalTax:1510.2,roundOff:-0.2,grandTotal:10100,paid:true},
+];
+const IPU=[
+  {id:'PUR001',purchaseNo:'PUR-2024-001',date:'2024-01-25',supplierId:'S001',supplierName:'Tech Wholesale Delhi',supplierGstin:'07AAATW7890F1Z5',taxType:'igst',items:[{productId:'P001',name:'Samsung Mobile A54',hsn:'85171210',qty:10,rate:25000,gstRate:18,taxable:250000,cgst:0,sgst:0,igst:45000,total:295000}],subtotal:250000,taxable:250000,cgst:0,sgst:0,igst:45000,totalTax:45000,grandTotal:295000,paid:true},
+];
+
+// ─── UTILS ─────────────────────────────────────────────────────────────────────
+const fc=n=>'₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fd=d=>{if(!d)return'';return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})};
+const tod=()=>new Date().toISOString().split('T')[0];
+const inRange=(d,s,e)=>d>=s&&d<=e;
+
+const getRange=(filter,cs,ce)=>{
+  const now=new Date();const yr=now.getFullYear();const mo=now.getMonth();
+  switch(filter){
+    case'today':{const t=tod();return{start:t,end:t}}
+    case'week':{const d=now.getDay();const s=new Date(now);s.setDate(now.getDate()-d);const e=new Date(s);e.setDate(s.getDate()+6);return{start:s.toISOString().split('T')[0],end:e.toISOString().split('T')[0]}}
+    case'month':{return{start:new Date(yr,mo,1).toISOString().split('T')[0],end:new Date(yr,mo+1,0).toISOString().split('T')[0]}}
+    case'lastmonth':{return{start:new Date(yr,mo-1,1).toISOString().split('T')[0],end:new Date(yr,mo,0).toISOString().split('T')[0]}}
+    case'quarter':{const q=Math.floor(mo/3);return{start:new Date(yr,q*3,1).toISOString().split('T')[0],end:new Date(yr,q*3+3,0).toISOString().split('T')[0]}}
+    case'year':{return{start:`${yr}-04-01`,end:`${yr+1}-03-31`}}
+    case'custom':return{start:cs||'2020-01-01',end:ce||'2099-12-31'}
+    default:return{start:'2020-01-01',end:'2099-12-31'}
+  }
+};
+
+const calcTotals=(items,taxType)=>{
+  const calc=items.map(item=>{
+    const taxable=+(item.qty*item.rate).toFixed(2);
+    const tax=+(taxable*item.gstRate/100).toFixed(2);
+    const cgst=taxType==='cgst_sgst'?+(tax/2).toFixed(2):0;
+    const sgst=taxType==='cgst_sgst'?+(tax/2).toFixed(2):0;
+    const igst=taxType==='igst'?tax:0;
+    return{...item,taxable,cgst,sgst,igst,total:+(taxable+tax).toFixed(2)};
+  });
+  const taxable=+calc.reduce((s,i)=>s+i.taxable,0).toFixed(2);
+  const cgst=+calc.reduce((s,i)=>s+i.cgst,0).toFixed(2);
+  const sgst=+calc.reduce((s,i)=>s+i.sgst,0).toFixed(2);
+  const igst=+calc.reduce((s,i)=>s+i.igst,0).toFixed(2);
+  const totalTax=+(cgst+sgst+igst).toFixed(2);
+  const gross=taxable+totalTax;
+  const paise=+(gross%1).toFixed(2); // decimal part e.g. 0.42 or 0.67
+  const grandTotal=paise>=0.50?Math.ceil(gross):Math.floor(gross); // .50–.99 → up | .00–.49 → down
+  const roundOff=+((grandTotal-gross).toFixed(2));
+  return{items:calc,taxable,cgst,sgst,igst,totalTax,roundOff,grandTotal};
+};
+
+const nextInvNo=(invoices)=>{const yr=new Date().getFullYear();const nums=invoices.filter(i=>i.invoiceNo.startsWith(`INV-${yr}`)).map(i=>parseInt(i.invoiceNo.split('-')[2])||0);return`INV-${yr}-${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`};
+const nextPurNo=(purchases)=>{const yr=new Date().getFullYear();const nums=purchases.filter(p=>p.purchaseNo.startsWith(`PUR-${yr}`)).map(p=>parseInt(p.purchaseNo.split('-')[2])||0);return`PUR-${yr}-${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`};
+
+// ─── MODAL ─────────────────────────────────────────────────────────────────────
+const Modal=({show,onClose,title,size,children,footer})=>{
+  if(!show)return null;
+  return(
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className={`modal ${size||''} anim`}>
+        <div className="modal-hd"><h3>{title}</h3><button className="close-btn" onClick={onClose}>✕</button></div>
+        <div className="modal-bd">{children}</div>
+        {footer&&<div className="modal-ft">{footer}</div>}
+      </div>
+    </div>
+  );
+};
+
+// ─── SIDEBAR ───────────────────────────────────────────────────────────────────
+const Sidebar=({active,set})=>{
+  const items=[
+    {id:'dashboard',icon:'⊞',label:'Dashboard'},
+    {id:'billing',icon:'🧾',label:'Sales Invoice'},
+    {id:'purchase',icon:'📦',label:'Purchase Entry'},
+    {id:'inventory',icon:'📊',label:'Inventory'},
+    {id:'gst',icon:'🏛️',label:'GST Summary'},
+    {id:'customers',icon:'👥',label:'Customer Ledger'},
+    {id:'suppliers',icon:'🏭',label:'Supplier Ledger'},
+  ];
+  return(
+    <div className="sidebar">
+      <div className="sb-logo"><h1>Biz<span>GST</span> Pro</h1><p>{CO.name}</p></div>
+      <nav className="sb-nav">
+        <div className="sb-section">Main Menu</div>
+        {items.map(i=>(
+          <div key={i.id} className={`nav-item${active===i.id?' active':''}`} onClick={()=>set(i.id)}>
+            <span className="ni">{i.icon}</span>{i.label}
+          </div>
+        ))}
+        <div className="sb-section" style={{marginTop:16}}>Company</div>
+        <div style={{padding:'8px 12px',fontSize:11,color:'#4B5563',lineHeight:1.7}}>
+          <div style={{color:'#9CA3AF',marginBottom:2}}>GSTIN</div>
+          <div style={{color:'#E5E7EB',fontFamily:'JetBrains Mono',fontSize:10}}>{CO.gstin}</div>
+          <div style={{color:'#9CA3AF',marginBottom:2,marginTop:6}}>State</div>
+          <div style={{color:'#E5E7EB',fontSize:11}}>{CO.state} (Code: {CO.stateCode})</div>
+        </div>
+      </nav>
+    </div>
+  );
+};
+
+// ─── DASHBOARD ─────────────────────────────────────────────────────────────────
+const Dashboard=({invoices,purchases,products,setModule})=>{
+  const mr=getRange('month');
+  const mInv=invoices.filter(i=>inRange(i.date,mr.start,mr.end));
+  const sales=mInv.reduce((s,i)=>s+i.grandTotal,0);
+  const tax=mInv.reduce((s,i)=>s+i.totalTax,0);
+  const pending=invoices.filter(i=>!i.paid).reduce((s,i)=>s+i.grandTotal,0);
+  const low=products.filter(p=>p.stock<=p.minStock).length;
+  const recent=[...invoices].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+  return(
+    <div className="anim">
+      <div className="stats-grid">
+        <div className="stat-card"><div className="stat-label">This Month Sales</div><div className="stat-value" style={{color:'var(--success)'}}>{fc(sales)}</div><div className="stat-sub">{mInv.length} invoices</div></div>
+        <div className="stat-card"><div className="stat-label">Output GST (Month)</div><div className="stat-value" style={{color:'var(--primary)'}}>{fc(tax)}</div><div className="stat-sub">GST liability</div></div>
+        <div className="stat-card"><div className="stat-label">Pending Receivables</div><div className="stat-value" style={{color:'var(--warning)'}}>{fc(pending)}</div><div className="stat-sub">{invoices.filter(i=>!i.paid).length} unpaid invoices</div></div>
+        <div className="stat-card"><div className="stat-label">Low Stock Alerts</div><div className="stat-value" style={{color:low>0?'var(--danger)':'var(--success)'}}>{low}</div><div className="stat-sub">products below minimum</div></div>
+      </div>
+      {low>0&&<div className="alert alert-warn mb4">⚠️ <strong>{low} product{low>1?'s':''}</strong> below minimum stock. <span style={{cursor:'pointer',textDecoration:'underline'}} onClick={()=>setModule('inventory')}>View Inventory →</span></div>}
+      <div className="card">
+        <div className="card-header"><h3>Recent Invoices</h3><button className="btn btn-outline btn-sm" onClick={()=>setModule('billing')}>View All</button></div>
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Invoice No</th><th>Date</th><th>Customer</th><th>Tax Type</th><th>GST</th><th style={{textAlign:'right'}}>Total</th><th>Status</th></tr></thead>
+            <tbody>
+              {recent.map(inv=>(
+                <tr key={inv.id}>
+                  <td className="mono bold">{inv.invoiceNo}</td>
+                  <td>{fd(inv.date)}</td>
+                  <td><div className="bold">{inv.customerName}</div><div className="sm muted">{inv.customerState}</div></td>
+                  <td><span className={`badge ${inv.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{inv.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
+                  <td className="mono">{fc(inv.totalTax)}</td>
+                  <td className="mono bold tr">{fc(inv.grandTotal)}</td>
+                  <td><span className={`badge ${inv.paid?'badge-success':'badge-warning'}`}>{inv.paid?'Paid':'Pending'}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── BILLING MODULE ────────────────────────────────────────────────────────────
+const BillingModule=({invoices,setInvoices,customers,products,setProducts})=>{
+  const [showForm,setShowForm]=useState(false);
+  const [printInv,setPrintInv]=useState(null);
+  const [fs,setFs]=useState('all');
+  const filtered=[...invoices].filter(i=>fs==='all'||(fs==='paid'?i.paid:!i.paid)).sort((a,b)=>b.date.localeCompare(a.date));
+  const handleCreate=inv=>{
+    setInvoices(p=>[...p,inv]);
+    setProducts(p=>p.map(prod=>{const item=inv.items.find(i=>i.productId===prod.id);return item?{...prod,stock:Math.max(0,prod.stock-item.qty)}:prod}));
+    setShowForm(false);
+  };
+  const togglePaid=id=>setInvoices(p=>p.map(i=>i.id===id?{...i,paid:!i.paid}:i));
+  return(
+    <div className="anim">
+      <div className="row between mb4">
+        <div className="row gap2">
+          {['all','paid','pending'].map(s=><button key={s} className={`filter-btn${fs===s?' on':''}`} onClick={()=>setFs(s)}>{s.charAt(0).toUpperCase()+s.slice(1)}</button>)}
+        </div>
+        <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ New Invoice</button>
+      </div>
+      <div className="card">
+        <div className="tbl-wrap">
+          {filtered.length===0?(
+            <div className="empty"><div className="ei">🧾</div><h3>No Invoices</h3><p>Create your first sales invoice</p></div>
+          ):(
+            <table>
+              <thead><tr><th>Invoice No</th><th>Date</th><th>Customer</th><th>Tax Type</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>GST</th><th style={{textAlign:'right'}}>Total</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>
+                {filtered.map(inv=>(
+                  <tr key={inv.id}>
+                    <td className="mono bold">{inv.invoiceNo}</td>
+                    <td>{fd(inv.date)}</td>
+                    <td><div className="bold">{inv.customerName}</div><div className="sm muted">{inv.customerState}</div></td>
+                    <td><span className={`badge ${inv.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{inv.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
+                    <td className="mono tr">{fc(inv.taxable)}</td>
+                    <td className="mono tr">{fc(inv.totalTax)}</td>
+                    <td className="mono bold tr">{fc(inv.grandTotal)}</td>
+                    <td><span className={`badge ${inv.paid?'badge-success':'badge-warning'}`} style={{cursor:'pointer'}} onClick={()=>togglePaid(inv.id)}>{inv.paid?'✓ Paid':'Pending'}</span></td>
+                    <td><button className="btn btn-outline btn-sm" onClick={()=>setPrintInv(inv)}>🖨 Print</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      {showForm&&<InvoiceForm customers={customers} products={products} invoices={invoices} onSave={handleCreate} onClose={()=>setShowForm(false)}/>}
+      {printInv&&<InvoicePrint invoice={printInv} onClose={()=>setPrintInv(null)}/>}
+    </div>
+  );
+};
+
+// ─── INVOICE FORM ──────────────────────────────────────────────────────────────
+const InvoiceForm=({customers,products,invoices,onSave,onClose})=>{
+  const [date,setDate]=useState(tod());
+  const [custId,setCustId]=useState('');
+  const [items,setItems]=useState([{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
+  const cust=customers.find(c=>c.id===custId);
+  const taxType=cust&&cust.stateCode!==CO.stateCode?'igst':'cgst_sgst';
+  const totals=useMemo(()=>{
+    const valid=items.filter(i=>i.productId&&i.qty>0&&i.rate>0);
+    if(!valid.length)return{items:[],taxable:0,cgst:0,sgst:0,igst:0,totalTax:0,roundOff:0,grandTotal:0};
+    return calcTotals(valid,taxType);
+  },[items,taxType]);
+  const addItem=()=>setItems(p=>[...p,{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
+  const removeItem=idx=>setItems(p=>p.filter((_,i)=>i!==idx));
+  const updItem=(idx,f,v)=>setItems(p=>{
+    const u=[...p];u[idx]={...u[idx],[f]:v};
+    if(f==='productId'){const pr=products.find(p=>p.id===v);if(pr)u[idx]={...u[idx],name:pr.name,hsn:pr.hsn,rate:pr.salePrice,gstRate:pr.gstRate};}
+    return u;
+  });
+  const handleSave=()=>{
+    if(!custId)return alert('Please select a customer');
+    if(totals.grandTotal===0)return alert('Please add at least one item');
+    const inv={id:'INV'+Date.now(),invoiceNo:nextInvNo(invoices),date,customerId:custId,customerName:cust.name,customerGstin:cust.gstin,customerAddress:cust.address,customerState:cust.state,customerStateCode:cust.stateCode,taxType,subtotal:totals.taxable,...totals,paid:false};
+    onSave(inv);
+  };
+  return(
+    <Modal show title="Create Sales Invoice" size="modal-lg" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={handleSave}>💾 Save Invoice</button></>}>
+      <div className="g3 mb4">
+        <div className="form-group"><label className="form-label">Invoice Date *</label><input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        <div className="form-group" style={{gridColumn:'span 2'}}><label className="form-label">Customer *</label>
+          <select className="form-control" value={custId} onChange={e=>setCustId(e.target.value)}>
+            <option value="">— Select Customer —</option>
+            {customers.map(c=><option key={c.id} value={c.id}>{c.name} ({c.state})</option>)}
+          </select>
+        </div>
+      </div>
+      {cust&&<div className="alert alert-info mb4">Tax Type: <strong>{taxType==='cgst_sgst'?`CGST + SGST (Intrastate — ${cust.state})`:`IGST (Interstate — ${cust.state})`}</strong> | GSTIN: <span className="mono">{cust.gstin}</span></div>}
+      <div className="card mb4">
+        <div className="card-header"><h3>Line Items</h3><button className="btn btn-outline btn-sm" onClick={addItem}>+ Add Row</button></div>
+        <div style={{padding:'12px 16px',overflowX:'auto'}}>
+          <div className="item-grid item-hdr"><div>Product</div><div>HSN</div><div>Qty</div><div>Rate (₹)</div><div>GST %</div><div></div></div>
+          {items.map((item,idx)=>(
+            <div key={idx} className="item-grid">
+              <select className="form-control" value={item.productId} onChange={e=>updItem(idx,'productId',e.target.value)}>
+                <option value="">— Select —</option>
+                {products.map(p=><option key={p.id} value={p.id}>{p.name} (Stock: {p.stock} {p.unit})</option>)}
+              </select>
+              <div className="mono sm muted" style={{paddingLeft:4}}>{item.hsn||'—'}</div>
+              <input type="number" className="form-control" value={item.qty} min="1" onChange={e=>updItem(idx,'qty',parseFloat(e.target.value)||0)}/>
+              <input type="number" className="form-control" value={item.rate} min="0" step="0.01" onChange={e=>updItem(idx,'rate',parseFloat(e.target.value)||0)}/>
+              <select className="form-control" value={item.gstRate} onChange={e=>updItem(idx,'gstRate',parseFloat(e.target.value))}>
+                {GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}
+              </select>
+              <button className="btn btn-danger btn-sm" onClick={()=>removeItem(idx)} disabled={items.length===1}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      {totals.items.length>0&&(
+        <div className="card mb4">
+          <div style={{padding:'12px 16px',overflowX:'auto'}}>
+            <table style={{fontSize:12}}>
+              <thead><tr><th>Item</th><th style={{textAlign:'right'}}>Taxable</th>{taxType==='cgst_sgst'?<><th style={{textAlign:'right'}}>CGST</th><th style={{textAlign:'right'}}>SGST</th></>:<th style={{textAlign:'right'}}>IGST</th>}<th style={{textAlign:'right'}}>Total</th></tr></thead>
+              <tbody>{totals.items.map((it,i)=>(
+                <tr key={i}><td>{it.name} × {it.qty}</td><td className="mono tr">{fc(it.taxable)}</td>{taxType==='cgst_sgst'?<><td className="mono tr">{fc(it.cgst)}</td><td className="mono tr">{fc(it.sgst)}</td></>:<td className="mono tr">{fc(it.igst)}</td>}<td className="mono tr bold">{fc(it.total)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {totals.grandTotal>0&&(
+        <div style={{maxWidth:340,marginLeft:'auto'}}>
+          <div className="sum-box">
+            <div className="sum-row"><span className="sum-lbl">Subtotal (Taxable)</span><span className="sum-amt">{fc(totals.taxable)}</span></div>
+            {taxType==='cgst_sgst'?<><div className="sum-row"><span className="sum-lbl">CGST</span><span className="sum-amt">{fc(totals.cgst)}</span></div><div className="sum-row"><span className="sum-lbl">SGST</span><span className="sum-amt">{fc(totals.sgst)}</span></div></>:<div className="sum-row"><span className="sum-lbl">IGST</span><span className="sum-amt">{fc(totals.igst)}</span></div>}
+            <div className="sum-row"><span className="sum-lbl">Total Tax</span><span className="sum-amt">{fc(totals.totalTax)}</span></div>
+            <div className="sum-row"><span className="sum-lbl">Round Off</span><span className="sum-amt">{totals.roundOff>=0?'+':''}{totals.roundOff.toFixed(2)}</span></div>
+            <div className="sum-row sum-total"><span>Grand Total</span><span className="sum-amt" style={{fontSize:16,color:'var(--primary)'}}>{fc(totals.grandTotal)}</span></div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+// ─── INVOICE PRINT ─────────────────────────────────────────────────────────────
+const InvoicePrint=({invoice,onClose})=>(
+  <Modal show title="Invoice Preview — Ready to Print" size="modal-lg" onClose={onClose}
+    footer={<><button className="btn btn-outline no-print" onClick={onClose}>Close</button><button className="btn btn-primary no-print" onClick={()=>window.print()}>🖨 Print / Save PDF</button></>}>
+    <div className="pi">
+      <div className="pi-hd">
+        <div>
+          <div className="pi-co">{CO.name}</div>
+          <div style={{fontSize:12,marginTop:4,color:'#64748B',lineHeight:1.7}}>{CO.address}<br/>GSTIN: <strong>{CO.gstin}</strong> | PAN: {CO.pan}<br/>📞 {CO.phone} | ✉ {CO.email}</div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{fontSize:18,fontWeight:800,color:'var(--primary)'}}>TAX INVOICE</div>
+          <div className="mono" style={{fontSize:15,fontWeight:700,marginTop:4}}>{invoice.invoiceNo}</div>
+          <div style={{fontSize:12,color:'#64748B',marginTop:3}}>Date: {fd(invoice.date)}</div>
+          <div style={{marginTop:8,padding:'3px 12px',background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:11,fontWeight:700,display:'inline-block'}}>{invoice.taxType==='cgst_sgst'?'Intrastate (CGST+SGST)':'Interstate (IGST)'}</div>
+        </div>
+      </div>
+      <div className="pi-info">
+        <div className="pi-box"><h4>Bill From</h4><p><strong>{CO.name}</strong><br/>{CO.address}<br/>GSTIN: {CO.gstin}</p></div>
+        <div className="pi-box"><h4>Bill To</h4><p><strong>{invoice.customerName}</strong><br/>{invoice.customerAddress}<br/>State: {invoice.customerState}<br/>GSTIN: {invoice.customerGstin}</p></div>
+      </div>
+      <table className="pi-table" style={{marginBottom:16}}>
+        <thead><tr><th style={{width:32}}>Sr</th><th>Product</th><th>HSN</th><th style={{textAlign:'right'}}>Qty</th><th style={{textAlign:'right'}}>Rate</th><th style={{textAlign:'right'}}>GST%</th>{invoice.taxType==='cgst_sgst'?<><th style={{textAlign:'right'}}>CGST</th><th style={{textAlign:'right'}}>SGST</th></>:<th style={{textAlign:'right'}}>IGST</th>}<th style={{textAlign:'right'}}>Total</th></tr></thead>
+        <tbody>{invoice.items.map((item,idx)=>(
+          <tr key={idx}>
+            <td style={{textAlign:'center'}}>{idx+1}</td><td>{item.name}</td><td className="mono">{item.hsn}</td>
+            <td className="tr">{item.qty}</td><td className="mono tr">{fc(item.rate)}</td><td className="tr">{item.gstRate}%</td>
+            {invoice.taxType==='cgst_sgst'?<><td className="mono tr">{fc(item.cgst)}</td><td className="mono tr">{fc(item.sgst)}</td></>:<td className="mono tr">{fc(item.igst)}</td>}
+            <td className="mono bold tr">{fc(item.total)}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+      <div className="pi-totals sum-box">
+        <div className="sum-row"><span className="sum-lbl">Taxable Amount</span><span className="sum-amt">{fc(invoice.taxable)}</span></div>
+        {invoice.taxType==='cgst_sgst'?<><div className="sum-row"><span className="sum-lbl">CGST</span><span className="sum-amt">{fc(invoice.cgst)}</span></div><div className="sum-row"><span className="sum-lbl">SGST</span><span className="sum-amt">{fc(invoice.sgst)}</span></div></>:<div className="sum-row"><span className="sum-lbl">IGST</span><span className="sum-amt">{fc(invoice.igst)}</span></div>}
+        <div className="sum-row"><span className="sum-lbl">Total Tax</span><span className="sum-amt">{fc(invoice.totalTax)}</span></div>
+        <div className="sum-row"><span className="sum-lbl">Round Off</span><span className="sum-amt">{invoice.roundOff>=0?'+':''}{invoice.roundOff.toFixed(2)}</span></div>
+        <div className="sum-row sum-total"><span>Grand Total</span><span className="sum-amt" style={{fontSize:17,color:'var(--primary)'}}>{fc(invoice.grandTotal)}</span></div>
+      </div>
+      <div style={{marginTop:16,fontSize:12,color:'#64748B'}}><strong>Bank:</strong> {CO.bank}</div>
+      <div style={{marginTop:14,padding:'10px 14px',background:'#D1FAE5',borderRadius:8,fontSize:12,color:'#065F46'}}>✅ Computer generated invoice. No physical signature required. Subject to {CO.state} jurisdiction.</div>
+    </div>
+  </Modal>
+);
+
+// ─── PURCHASE MODULE ───────────────────────────────────────────────────────────
+const PurchaseModule=({purchases,setPurchases,suppliers,products,setProducts})=>{
+  const [showForm,setShowForm]=useState(false);
+  const sorted=[...purchases].sort((a,b)=>b.date.localeCompare(a.date));
+  const handleCreate=pur=>{
+    setPurchases(p=>[...p,pur]);
+    setProducts(p=>p.map(prod=>{const item=pur.items.find(i=>i.productId===prod.id);return item?{...prod,stock:prod.stock+item.qty}:prod}));
+    setShowForm(false);
+  };
+  return(
+    <div className="anim">
+      <div className="row between mb4"><div></div><button className="btn btn-success" onClick={()=>setShowForm(true)}>+ New Purchase Entry</button></div>
+      <div className="card">
+        <div className="tbl-wrap">
+          {sorted.length===0?(
+            <div className="empty"><div className="ei">📦</div><h3>No Purchase Entries</h3><p>Add purchases to track stock & input GST credit</p></div>
+          ):(
+            <table>
+              <thead><tr><th>Purchase No</th><th>Date</th><th>Supplier</th><th>Tax Type</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Input GST</th><th style={{textAlign:'right'}}>Total</th></tr></thead>
+              <tbody>{sorted.map(p=>(
+                <tr key={p.id}>
+                  <td className="mono bold">{p.purchaseNo}</td><td>{fd(p.date)}</td>
+                  <td><div className="bold">{p.supplierName}</div><div className="sm muted">{p.supplierGstin}</div></td>
+                  <td><span className={`badge ${p.taxType==='cgst_sgst'?'badge-primary':'badge-warning'}`}>{p.taxType==='cgst_sgst'?'CGST+SGST':'IGST'}</span></td>
+                  <td className="mono tr">{fc(p.taxable)}</td>
+                  <td className="mono tr" style={{color:'var(--success)'}}>{fc(p.totalTax)}</td>
+                  <td className="mono bold tr">{fc(p.grandTotal)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      {showForm&&<PurchaseForm suppliers={suppliers} products={products} purchases={purchases} onSave={handleCreate} onClose={()=>setShowForm(false)}/>}
+    </div>
+  );
+};
+
+// ─── PURCHASE FORM ─────────────────────────────────────────────────────────────
+const PurchaseForm=({suppliers,products,purchases,onSave,onClose})=>{
+  const [date,setDate]=useState(tod());
+  const [suppId,setSuppId]=useState('');
+  const [items,setItems]=useState([{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}]);
+  const supp=suppliers.find(s=>s.id===suppId);
+  const taxType=supp&&supp.stateCode!==CO.stateCode?'igst':'cgst_sgst';
+  const totals=useMemo(()=>{
+    const valid=items.filter(i=>i.productId&&i.qty>0&&i.rate>0);
+    if(!valid.length)return{items:[],taxable:0,cgst:0,sgst:0,igst:0,totalTax:0,roundOff:0,grandTotal:0};
+    return calcTotals(valid,taxType);
+  },[items,taxType]);
+  const updItem=(idx,f,v)=>setItems(p=>{
+    const u=[...p];u[idx]={...u[idx],[f]:v};
+    if(f==='productId'){const pr=products.find(p=>p.id===v);if(pr)u[idx]={...u[idx],name:pr.name,hsn:pr.hsn,rate:pr.purchasePrice,gstRate:pr.gstRate};}
+    return u;
+  });
+  const handleSave=()=>{
+    if(!suppId||totals.grandTotal===0)return alert('Please fill all fields');
+    const pur={id:'PUR'+Date.now(),purchaseNo:nextPurNo(purchases),date,supplierId:suppId,supplierName:supp.name,supplierGstin:supp.gstin,taxType,subtotal:totals.taxable,...totals,paid:false};
+    onSave(pur);
+  };
+  return(
+    <Modal show title="New Purchase Entry" size="modal-lg" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-success" onClick={handleSave}>💾 Save Purchase</button></>}>
+      <div className="g3 mb4">
+        <div className="form-group"><label className="form-label">Purchase Date *</label><input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        <div className="form-group" style={{gridColumn:'span 2'}}><label className="form-label">Supplier *</label>
+          <select className="form-control" value={suppId} onChange={e=>setSuppId(e.target.value)}>
+            <option value="">— Select Supplier —</option>
+            {suppliers.map(s=><option key={s.id} value={s.id}>{s.name} ({s.state})</option>)}
+          </select>
+        </div>
+      </div>
+      {supp&&<div className="alert alert-ok mb4">Tax Type: <strong>{taxType==='cgst_sgst'?'CGST + SGST (Intrastate)':'IGST (Interstate)'}</strong> | GSTIN: <span className="mono">{supp.gstin}</span></div>}
+      <div className="card mb4">
+        <div className="card-header"><h3>Items</h3><button className="btn btn-outline btn-sm" onClick={()=>setItems(p=>[...p,{productId:'',name:'',hsn:'',qty:1,rate:0,gstRate:18}])}>+ Add</button></div>
+        <div style={{padding:'12px 16px'}}>
+          <div className="item-grid item-hdr"><div>Product</div><div>HSN</div><div>Qty</div><div>Rate (₹)</div><div>GST %</div><div></div></div>
+          {items.map((item,idx)=>(
+            <div key={idx} className="item-grid">
+              <select className="form-control" value={item.productId} onChange={e=>updItem(idx,'productId',e.target.value)}>
+                <option value="">— Select —</option>
+                {products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <div className="mono sm muted">{item.hsn||'—'}</div>
+              <input type="number" className="form-control" value={item.qty} min="1" onChange={e=>updItem(idx,'qty',parseFloat(e.target.value)||0)}/>
+              <input type="number" className="form-control" value={item.rate} step="0.01" onChange={e=>updItem(idx,'rate',parseFloat(e.target.value)||0)}/>
+              <select className="form-control" value={item.gstRate} onChange={e=>updItem(idx,'gstRate',parseFloat(e.target.value))}>
+                {GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}
+              </select>
+              <button className="btn btn-danger btn-sm" onClick={()=>setItems(p=>p.filter((_,i)=>i!==idx))} disabled={items.length===1}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      {totals.grandTotal>0&&(
+        <div style={{maxWidth:320,marginLeft:'auto'}}>
+          <div className="sum-box">
+            <div className="sum-row"><span className="sum-lbl">Taxable</span><span className="sum-amt">{fc(totals.taxable)}</span></div>
+            {taxType==='cgst_sgst'?<><div className="sum-row"><span className="sum-lbl">CGST</span><span className="sum-amt">{fc(totals.cgst)}</span></div><div className="sum-row"><span className="sum-lbl">SGST</span><span className="sum-amt">{fc(totals.sgst)}</span></div></>:<div className="sum-row"><span className="sum-lbl">IGST</span><span className="sum-amt">{fc(totals.igst)}</span></div>}
+            <div className="sum-row sum-total"><span>Grand Total</span><span className="sum-amt" style={{color:'var(--success)'}}>{fc(totals.grandTotal)}</span></div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+// ─── INVENTORY ─────────────────────────────────────────────────────────────────
+const InventoryModule=({products,setProducts})=>{
+  const [showForm,setShowForm]=useState(false);
+  const [editP,setEditP]=useState(null);
+  const [filterLow,setFilterLow]=useState(false);
+  const low=products.filter(p=>p.stock<=p.minStock).length;
+  const shown=filterLow?products.filter(p=>p.stock<=p.minStock):products;
+  const handleSave=p=>{
+    if(editP)setProducts(prev=>prev.map(x=>x.id===p.id?p:x));
+    else setProducts(prev=>[...prev,{...p,id:'P'+Date.now()}]);
+    setShowForm(false);setEditP(null);
+  };
+  const handleDel=id=>{if(window.confirm('Delete this product?'))setProducts(p=>p.filter(x=>x.id!==id))};
+  return(
+    <div className="anim">
+      {low>0&&<div className="alert alert-warn mb4">⚠️ <strong>{low}</strong> product{low>1?'s are':' is'} at or below minimum stock. Please reorder soon.</div>}
+      <div className="row between mb4">
+        <div className="row gap2">
+          <button className={`filter-btn${!filterLow?' on':''}`} onClick={()=>setFilterLow(false)}>All Products ({products.length})</button>
+          <button className={`filter-btn${filterLow?' on':''}`} onClick={()=>setFilterLow(true)} style={low>0?{borderColor:'var(--danger)',color:'var(--danger)'}:{}}>⚠ Low Stock ({low})</button>
+        </div>
+        <button className="btn btn-primary" onClick={()=>{setEditP(null);setShowForm(true)}}>+ Add Product</button>
+      </div>
+      <div className="card">
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Product Name</th><th>HSN</th><th>Unit</th><th>GST</th><th style={{textAlign:'right'}}>Sale Price</th><th style={{textAlign:'right'}}>Purchase Price</th><th style={{textAlign:'center'}}>Stock</th><th style={{textAlign:'center'}}>Min Stock</th><th>Actions</th></tr></thead>
+            <tbody>{shown.map(p=>(
+              <tr key={p.id}>
+                <td className="bold">{p.name}</td>
+                <td className="mono">{p.hsn}</td>
+                <td>{p.unit}</td>
+                <td><span className="badge badge-primary">{p.gstRate}%</span></td>
+                <td className="mono tr">{fc(p.salePrice)}</td>
+                <td className="mono tr">{fc(p.purchasePrice)}</td>
+                <td className="tc"><span className={p.stock<=p.minStock?'stock-low':'stock-ok'}>{p.stock}</span></td>
+                <td className="tc muted">{p.minStock}</td>
+                <td><div className="row gap2"><button className="btn btn-outline btn-sm" onClick={()=>{setEditP(p);setShowForm(true)}}>Edit</button><button className="btn btn-danger btn-sm" onClick={()=>handleDel(p.id)}>Del</button></div></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+      {showForm&&<ProductForm product={editP} onSave={handleSave} onClose={()=>{setShowForm(false);setEditP(null)}}/>}
+    </div>
+  );
+};
+
+const ProductForm=({product,onSave,onClose})=>{
+  const [f,setF]=useState(product||{name:'',hsn:'',unit:'PCS',salePrice:'',purchasePrice:'',gstRate:18,stock:0,minStock:5});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  return(
+    <Modal show title={product?'Edit Product':'Add New Product'} size="modal-sm" onClose={onClose}
+      footer={<><button className="btn btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(!f.name)return alert('Name required');onSave(f)}}>Save</button></>}>
+      <div className="form-group"><label className="form-label">Product Name *</label><input className="form-control" value={f.name} onChange={e=>s('name',e.target.value)} placeholder="Samsung Mobile A54"/></div>
+      <div className="g2">
+        <div className="form-group"><label className="form-label">HSN Code</label><input className="form-control mono" value={f.hsn} onChange={e=>s('hsn',e.target.value)} placeholder="85171210"/></div>
+        <div className="form-group"><label className="form-label">Unit</label><select className="form-control" value={f.unit} onChange={e=>s('unit',e.target.value)}><option>PCS</option><option>KG</option><option>LTR</option><option>MTR</option><option>BOX</option><option>PACK</option><option>SET</option><option>NOS</option></select></div>
+      </div>
+      <div className="g2">
+        <div className="form-group"><label className="form-label">Sale Price (₹)</label><input type="number" className="form-control" value={f.salePrice} onChange={e=>s('salePrice',parseFloat(e.target.value)||0)}/></div>
+        <div className="form-group"><label className="form-label">Purchase Price (₹)</label><input type="number" className="form-control" value={f.purchasePrice} onChange={e=>s('purchasePrice',parseFloat(e.target.value)||0)}/></div>
+      </div>
+      <div className="g2">
+        <div className="form-group"><label className="form-label">GST Rate</label><select className="form-control" value={f.gstRate} onChange={e=>s('gstRate',parseFloat(e.target.value))}>{GST_RATES.map(r=><option key={r} value={r}>{r}%</option>)}</select></div>
+        <div className="form-group"><label className="form-label">Opening Stock</label><input type="number" className="form-control" value={f.stock} onChange={e=>s('stock',parseInt(e.target.value)||0)}/></div>
+      </div>
+      <div className="form-group"><label className="form-label">Minimum Stock Alert</label><input type="number" className="form-control" value={f.minStock} onChange={e=>s('minStock',parseInt(e.target.value)||0)}/></div>
+    </Modal>
+  );
+};
+
+// ─── GST SUMMARY ───────────────────────────────────────────────────────────────
+const GSTSummaryModule=({invoices,purchases})=>{
+  const [filter,setFilter]=useState('month');
+  const [cs,setCs]=useState('');
+  const [ce,setCe]=useState('');
+  const range=getRange(filter,cs,ce);
+  const fInv=invoices.filter(i=>inRange(i.date,range.start,range.end));
+  const fPur=purchases.filter(p=>inRange(p.date,range.start,range.end));
+  const oCgst=fInv.reduce((s,i)=>s+(i.cgst||0),0);
+  const oSgst=fInv.reduce((s,i)=>s+(i.sgst||0),0);
+  const oIgst=fInv.reduce((s,i)=>s+(i.igst||0),0);
+  const oTotal=oCgst+oSgst+oIgst;
+  const oTaxable=fInv.reduce((s,i)=>s+(i.taxable||0),0);
+  const iCgst=fPur.reduce((s,p)=>s+(p.cgst||0),0);
+  const iSgst=fPur.reduce((s,p)=>s+(p.sgst||0),0);
+  const iIgst=fPur.reduce((s,p)=>s+(p.igst||0),0);
+  const iTotal=iCgst+iSgst+iIgst;
+  const iTaxable=fPur.reduce((s,p)=>s+(p.taxable||0),0);
+  const net=oTotal-iTotal;
+  const filters=[{id:'today',l:'Today'},{id:'week',l:'This Week'},{id:'month',l:'This Month'},{id:'lastmonth',l:'Last Month'},{id:'quarter',l:'This Quarter'},{id:'year',l:'This FY'},{id:'custom',l:'Custom'}];
+  return(
+    <div className="anim">
+      <div className="filter-bar">
+        {filters.map(f=><button key={f.id} className={`filter-btn${filter===f.id?' on':''}`} onClick={()=>setFilter(f.id)}>{f.l}</button>)}
+        {filter==='custom'&&<>
+          <input type="date" className="form-control" style={{width:150}} value={cs} onChange={e=>setCs(e.target.value)}/>
+          <span className="muted sm">to</span>
+          <input type="date" className="form-control" style={{width:150}} value={ce} onChange={e=>setCe(e.target.value)}/>
+        </>}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,marginBottom:20}}>
+        <div className="gst-card" style={{borderLeft:'4px solid var(--danger)'}}>
+          <div className="gst-ttl">Output GST (From Sales)</div>
+          <div className="gst-amt" style={{color:'var(--danger)'}}>{fc(oTotal)}</div>
+          <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:5}}>
+            {[['CGST',fc(oCgst)],['SGST',fc(oSgst)],['IGST',fc(oIgst)]].map(([l,v])=>(
+              <div key={l} style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{l}</span><span className="mono bold">{v}</span></div>
+            ))}
+            <div style={{borderTop:'1px solid var(--border)',paddingTop:5,marginTop:2,display:'flex',justifyContent:'space-between'}}><span className="muted">Taxable Sales</span><span className="mono">{fc(oTaxable)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">Invoices Count</span><span className="bold">{fInv.length}</span></div>
+          </div>
+        </div>
+        <div className="gst-card" style={{borderLeft:'4px solid var(--success)'}}>
+          <div className="gst-ttl">Input GST Credit (Purchases)</div>
+          <div className="gst-amt" style={{color:'var(--success)'}}>{fc(iTotal)}</div>
+          <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:5}}>
+            {[['CGST',fc(iCgst)],['SGST',fc(iSgst)],['IGST',fc(iIgst)]].map(([l,v])=>(
+              <div key={l} style={{display:'flex',justifyContent:'space-between'}}><span className="muted">{l}</span><span className="mono bold">{v}</span></div>
+            ))}
+            <div style={{borderTop:'1px solid var(--border)',paddingTop:5,marginTop:2,display:'flex',justifyContent:'space-between'}}><span className="muted">Taxable Purchases</span><span className="mono">{fc(iTaxable)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">Purchase Count</span><span className="bold">{fPur.length}</span></div>
+          </div>
+        </div>
+        <div className="gst-card" style={{borderLeft:'4px solid var(--primary)',background:net>0?'#FFF7ED':'#F0FDF4'}}>
+          <div className="gst-ttl">Net GST Payable</div>
+          <div className="gst-amt" style={{color:net>0?'var(--warning)':'var(--success)'}}>{fc(Math.abs(net))}</div>
+          <div style={{marginTop:8,fontSize:13,fontWeight:700,color:net>0?'var(--warning)':'var(--success)'}}>{net>0?'⬆ Payable to Government':'⬇ Credit Available (ITC)'}</div>
+          <div style={{marginTop:12,fontSize:12,display:'flex',flexDirection:'column',gap:4}}>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">Output GST</span><span className="mono">{fc(oTotal)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span className="muted">(−) Input Credit</span><span className="mono">({fc(iTotal)})</span></div>
+            <div style={{borderTop:'1px solid var(--border)',paddingTop:4,marginTop:2,display:'flex',justifyContent:'space-between',fontWeight:700}}><span>Net</span><span className="mono">{fc(net)}</span></div>
+          </div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+        <div className="card">
+          <div className="card-header"><h3>Sales Detail</h3><span className="badge badge-danger">{fInv.length} invoices</span></div>
+          <div className="tbl-wrap">
+            {fInv.length===0?<div style={{padding:20,textAlign:'center',color:'var(--text2)',fontSize:13}}>No sales in this period</div>:(
+              <table style={{fontSize:12}}>
+                <thead><tr><th>Invoice</th><th>Customer</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Output Tax</th></tr></thead>
+                <tbody>{fInv.map(inv=>(
+                  <tr key={inv.id}><td className="mono">{inv.invoiceNo}</td><td>{inv.customerName}</td><td className="mono tr">{fc(inv.taxable)}</td><td className="mono bold tr" style={{color:'var(--danger)'}}>{fc(inv.totalTax)}</td></tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-header"><h3>Purchase Detail</h3><span className="badge badge-success">{fPur.length} entries</span></div>
+          <div className="tbl-wrap">
+            {fPur.length===0?<div style={{padding:20,textAlign:'center',color:'var(--text2)',fontSize:13}}>No purchases in this period</div>:(
+              <table style={{fontSize:12}}>
+                <thead><tr><th>Purchase</th><th>Supplier</th><th style={{textAlign:'right'}}>Taxable</th><th style={{textAlign:'right'}}>Input Tax</th></tr></thead>
+                <tbody>{fPur.map(p=>(
+                  <tr key={p.id}><td className="mono">{p.purchaseNo}</td><td>{p.supplierName}</td><td className="mono tr">{fc(p.taxable)}</td><td className="mono bold tr" style={{color:'var(--success)'}}>{fc(p.totalTax)}</td></tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── CUSTOMER LEDGER ───────────────────────────────────────────────────────────
+const CustomerLedgerModule=({customers,invoices})=>{
+  const [selId,setSelId]=useState(null);
+  const balances=customers.map(c=>{
+    const invs=invoices.filter(i=>i.customerId===c.id);
+    const total=invs.reduce((s,i)=>s+i.grandTotal,0);
+    const paid=invs.filter(i=>i.paid).reduce((s,i)=>s+i.grandTotal,0);
+    return{...c,total,paid,balance:total-paid};
+  });
+  const sel=customers.find(c=>c.id===selId);
+  const selInvs=selId?[...invoices.filter(i=>i.customerId===selId)].sort((a,b)=>a.date.localeCompare(b.date)):[];
+  let running=0;
+  const rows=selInvs.map(inv=>{running+=inv.grandTotal;const bal=running-(inv.paid?inv.grandTotal:0);return{...inv,runBal:bal>=0?bal:0}});
+  const selBal=balances.find(c=>c.id===selId);
+  return(
+    <div className="anim" style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16}}>
+      <div className="card" style={{alignSelf:'start'}}>
+        <div className="card-header"><h3>Customers ({customers.length})</h3></div>
+        {balances.map(c=>(
+          <div key={c.id} className={`party-item${selId===c.id?' sel':''}`} onClick={()=>setSelId(c.id)}>
+            <div className="bold sm">{c.name}</div>
+            <div style={{fontSize:11,color:'var(--text2)',marginTop:1}}>{c.state}</div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12}}>
+              <span className="muted">Balance:</span>
+              <span className="mono bold" style={{color:c.balance>0?'var(--danger)':'var(--success)'}}>{fc(c.balance)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        {!sel?(
+          <div className="empty"><div className="ei">👈</div><h3>Select a Customer</h3><p>Click on a customer to view their ledger</p></div>
+        ):(
+          <>
+            <div className="card-header">
+              <div><h3>{sel.name}</h3><div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>GSTIN: {sel.gstin} | {sel.phone}</div></div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:11,color:'var(--text2)'}}>Outstanding</div>
+                <div style={{fontSize:18,fontWeight:800,color:'var(--danger)',fontFamily:'JetBrains Mono'}}>{fc(selBal?.balance||0)}</div>
+              </div>
+            </div>
+            <div style={{padding:'12px 16px',background:'#F9FAFB',borderBottom:'1px solid var(--border)',display:'flex',gap:24}}>
+              {[['Total Invoiced',selBal?.total,'var(--text)'],['Total Paid',selBal?.paid,'var(--success)'],['Balance Due',selBal?.balance,'var(--danger)']].map(([l,v,c])=>(
+                <div key={l}><div style={{fontSize:11,color:'var(--text2)'}}>{l}</div><div style={{fontFamily:'JetBrains Mono',fontWeight:700,color:c}}>{fc(v||0)}</div></div>
+              ))}
+            </div>
+            <div className="tbl-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Invoice No</th><th>Particulars</th><th style={{textAlign:'right'}}>Debit (Dr)</th><th style={{textAlign:'right'}}>Credit (Cr)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
+                <tbody>
+                  {rows.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:24,color:'var(--text2)'}}>No transactions</td></tr>:
+                  rows.map((row,i)=>(
+                    <tr key={i}>
+                      <td style={{fontSize:12}}>{fd(row.date)}</td>
+                      <td className="mono">{row.invoiceNo}</td>
+                      <td><div style={{fontSize:13}}>Sales Invoice</div><div style={{fontSize:11,color:'var(--text2)'}}>{row.items.length} item(s) | GST: {fc(row.totalTax)}</div></td>
+                      <td className="mono bold tr">{fc(row.grandTotal)}</td>
+                      <td className="mono tr" style={{color:'var(--success)'}}>{row.paid?fc(row.grandTotal):'—'}</td>
+                      <td className="mono bold tr" style={{color:row.runBal>0?'var(--danger)':'var(--success)'}}>{fc(row.runBal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── SUPPLIER LEDGER ───────────────────────────────────────────────────────────
+const SupplierLedgerModule=({suppliers,purchases})=>{
+  const [selId,setSelId]=useState(null);
+  const balances=suppliers.map(s=>{
+    const purs=purchases.filter(p=>p.supplierId===s.id);
+    const total=purs.reduce((sum,p)=>sum+p.grandTotal,0);
+    const paid=purs.filter(p=>p.paid).reduce((sum,p)=>sum+p.grandTotal,0);
+    return{...s,total,paid,balance:total-paid};
+  });
+  const sel=suppliers.find(s=>s.id===selId);
+  const selPurs=selId?[...purchases.filter(p=>p.supplierId===selId)].sort((a,b)=>a.date.localeCompare(b.date)):[];
+  let running=0;
+  const rows=selPurs.map(p=>{running+=p.grandTotal;const bal=running-(p.paid?p.grandTotal:0);return{...p,runBal:bal>=0?bal:0}});
+  const selBal=balances.find(s=>s.id===selId);
+  return(
+    <div className="anim" style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16}}>
+      <div className="card" style={{alignSelf:'start'}}>
+        <div className="card-header"><h3>Suppliers ({suppliers.length})</h3></div>
+        {balances.map(s=>(
+          <div key={s.id} className={`party-item${selId===s.id?' sel':''}`} style={{background:selId===s.id?'#F0FDF4':undefined}} onClick={()=>setSelId(s.id)}>
+            <div className="bold sm">{s.name}</div>
+            <div style={{fontSize:11,color:'var(--text2)',marginTop:1}}>{s.state}</div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12}}>
+              <span className="muted">Payable:</span>
+              <span className="mono bold" style={{color:s.balance>0?'var(--warning)':'var(--success)'}}>{fc(s.balance)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        {!sel?(
+          <div className="empty"><div className="ei">👈</div><h3>Select a Supplier</h3><p>Click on a supplier to view their ledger</p></div>
+        ):(
+          <>
+            <div className="card-header">
+              <div><h3>{sel.name}</h3><div style={{fontSize:11,color:'var(--text2)',marginTop:2}}>GSTIN: {sel.gstin} | {sel.phone}</div></div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:11,color:'var(--text2)'}}>Outstanding Payable</div>
+                <div style={{fontSize:18,fontWeight:800,color:'var(--warning)',fontFamily:'JetBrains Mono'}}>{fc(selBal?.balance||0)}</div>
+              </div>
+            </div>
+            <div style={{padding:'12px 16px',background:'#F9FAFB',borderBottom:'1px solid var(--border)',display:'flex',gap:24}}>
+              {[['Total Purchased',selBal?.total,'var(--text)'],['Total Paid',selBal?.paid,'var(--success)'],['Balance Payable',selBal?.balance,'var(--warning)']].map(([l,v,c])=>(
+                <div key={l}><div style={{fontSize:11,color:'var(--text2)'}}>{l}</div><div style={{fontFamily:'JetBrains Mono',fontWeight:700,color:c}}>{fc(v||0)}</div></div>
+              ))}
+            </div>
+            <div className="tbl-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Purchase No</th><th>Particulars</th><th style={{textAlign:'right'}}>Credit (Cr)</th><th style={{textAlign:'right'}}>Debit (Dr)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
+                <tbody>
+                  {rows.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:24,color:'var(--text2)'}}>No transactions</td></tr>:
+                  rows.map((row,i)=>(
+                    <tr key={i}>
+                      <td style={{fontSize:12}}>{fd(row.date)}</td>
+                      <td className="mono">{row.purchaseNo}</td>
+                      <td><div style={{fontSize:13}}>Purchase Invoice</div><div style={{fontSize:11,color:'var(--text2)'}}>Input GST: {fc(row.totalTax)}</div></td>
+                      <td className="mono bold tr">{fc(row.grandTotal)}</td>
+                      <td className="mono tr" style={{color:'var(--success)'}}>{row.paid?fc(row.grandTotal):'—'}</td>
+                      <td className="mono bold tr" style={{color:row.runBal>0?'var(--warning)':'var(--success)'}}>{fc(row.runBal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── APP ROOT ──────────────────────────────────────────────────────────────────
+const TITLES={dashboard:'Dashboard',billing:'Sales Invoice',purchase:'Purchase Entry',inventory:'Inventory Management',gst:'GST Summary Report',customers:'Customer Ledger',suppliers:'Supplier Ledger'};
+
+const App=()=>{
+  const [mod,setMod]=useState('dashboard');
+  const [customers]=useState(IC);
+  const [suppliers]=useState(IS);
+  const [products,setProducts]=useState(IP);
+  const [invoices,setInvoices]=useState(II);
+  const [purchases,setPurchases]=useState(IPU);
+  return(
+    <><OTABanner/>
+    <div className="app">
+      <Sidebar active={mod} set={setMod}/>
+      <div className="main">
+        <div className="topbar">
+          <h2>{TITLES[mod]}</h2>
+          <div className="row gap3">
+            <span style={{fontSize:12,color:'var(--text2)'}}>GSTIN: <span className="mono bold">{CO.gstin}</span></span>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--text2)'}}>{CO.name}</span>
+          </div>
+        </div>
+        <div className="content">
+          {mod==='dashboard'&&<Dashboard invoices={invoices} purchases={purchases} products={products} setModule={setMod}/>}
+          {mod==='billing'&&<BillingModule invoices={invoices} setInvoices={setInvoices} customers={customers} products={products} setProducts={setProducts}/>}
+          {mod==='purchase'&&<PurchaseModule purchases={purchases} setPurchases={setPurchases} suppliers={suppliers} products={products} setProducts={setProducts}/>}
+          {mod==='inventory'&&<InventoryModule products={products} setProducts={setProducts}/>}
+          {mod==='gst'&&<GSTSummaryModule invoices={invoices} purchases={purchases}/>}
+          {mod==='customers'&&<CustomerLedgerModule customers={customers} invoices={invoices}/>}
+          {mod==='suppliers'&&<SupplierLedgerModule suppliers={suppliers} purchases={purchases}/>}
+        </div>
+      </div>
+    </div></>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
